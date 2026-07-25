@@ -271,10 +271,30 @@ re-read/echo the grammar line on Windows).
 
 Full suite (flex + bison) is **117/117 green** under VS2022 x64 Release.
 
-The WSL side (`generate.sh` + reference bison 3.8.2) is proven. **Next**: grow `golden-cases/` (the
-toolchain-free tier — more `input`/`conflicts`/`output`/`report` grammars) and, separately,
-pre-generate + commit the faithful `testsuite` (B2) once broader coverage is wanted. This pass
-established the pipeline; scaling the fixture set is incremental.
+The WSL side (`generate.sh` + reference bison 3.8.2) is proven. Growing `golden-cases/` (more
+`input`/`conflicts`/`output`/`report` grammars) is incremental.
+
+### Status — B2 faithful autotest bootstrapped (`tests/bison-autotest/`)
+
+The full upstream suite is now wired as an opt-in WSL runner (the path to *all* bison tests):
+
+- `at/` vendors the version-matched `.at` sources (29 files + `testsuite.h`) plus a hand-authored
+  `package.m4`; `run.sh` compiles them with `autom4te` into the **776-group** `testsuite` and runs
+  it under WSL against `win_bison.exe`. The 18 MB generated `testsuite` is produced on demand, not
+  committed. `.gitattributes` (`eol=lf`) keeps the WSL-consumed files correct under autocrlf.
+- A **normalizing `bison` wrapper** rewrites the program name (`win_bison.exe → bison`; win_bison
+  does not strip `.exe` as GNU tools do) and strips CR before the harness compares — the same
+  cosmetic fixes as the golden-diff launcher. `atconfig`/`atlocal` are hand-authored;
+  `CC`/`CXX`/`DC`/`CONF_JAVAC` empty ⇒ compile/Java/D tiers auto-skip.
+
+**Baseline (toolchain-free tier, no compilers):** the harness drives win_bison over all 776 groups;
+of the ~212–227 non-skipped groups the program-name/CRLF normalization took failures from **200 →
+136**. Remaining failures are being triaged for the next systematic causes (path separators; a few
+genuine port behaviours). This is inherently iterative, tracked step by step against the committed
+harness. Enabling the C tier needs `gcc` in WSL (`build-essential`).
+
+**Runner split recap:** the Windows `ctest` gate stays dependency-free (flex 112 + bison
+compile-run/golden). The faithful 776-test autotest is the deeper, WSL-only coverage engine.
 
 ## Windows design — our own tests (author, don't import)
 
