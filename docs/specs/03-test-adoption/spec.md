@@ -25,41 +25,63 @@ The key property: **pass/fail is the scanner's exit code, not golden-output diff
   `LOG_COMPILER` wrappers (`testwrapper.sh`, `testwrapper-direct.sh`, `options.cn`).
 - A scanner is generated from `.l`/`.ll`/`.lll` by the just-built flex (`.ll` ⇒ `-+` C++;
   `.lll` ⇒ C output compiled as C++), compiled, then run with the matching `.txt` piped in.
-- **The pass/fail logic is baked into the generated scanner by m4**: the catch-all rule emits
-  `fprintf(stderr,"TEST FAILED…");exit(1);`, and clean EOF prints `TEST RETURNING OK.` and returns
-  0. Exit `77` = skipped.
-- **Ruleset tests** (`*.rules`) are backend-independent rulesets expanded — per backend
-  (`nr`/`r`/`c99`) and table option — into concrete `<stem>_<backend>.l` + `.txt` by
-  `ruleset.sh` → `testmaker.sh` → `testmaker.m4`. **This generation requires `m4` + `sh`.**
+- **The pass/fail logic is baked into the test scanner's rules**: the catch-all rule calls
+  `exit(1)` (or the `main` returns non-zero) on unexpected input, and a clean run returns 0 (most
+  also print `TEST RETURNING OK.`). Exit `77` = skipped. Upstream keys pass/fail on the **exit
+  code**, not golden-output diffing.
+- **`tableopts` tests** are the one generated family in v2.6.4: `tableopts.sh` emits a
+  `tableopts.am` fragment enumerating one scanner per table-option (`-Ca -Ce -Cf …`) × backend
+  (`nr`/`r`) × mode (`opt`/`ser`/`ver`), all from the single template `tableopts.l4`. Generating
+  the *list* needs `sh`; generating each *scanner* is a normal `win_flex` invocation.
 
-File conventions: `.l`/`.ll`/`.lll` flex input; `.txt` runtime input; `.rules` backend-independent
-ruleset (input after a `###` marker); `.direct` runs from srcdir; `.cn` option-conformance script;
-`.tables` serialized DFA for `.ser`/`.ver`.
+> **Note (verified against `orig/flex` @ v2.6.4):** this baseline does **not** use the
+> `.rules`/`ruleset.sh`/`testmaker.m4` machinery found on newer flex `master`. Re-verify the exact
+> mechanism against the target baseline before adopting a newer flex — the file conventions below
+> are v2.6.4's.
 
-## Windows design — FLEX: pre-generate & commit, run under CTest
+File conventions (v2.6.4): `.l` flex input, `.ll` C++ (`-+`) input, `.lll` C output compiled as
+C++; `.txt` runtime input; `.l4` m4/flex template shared by the `reject`/`table`/`tableopts`
+families (generated with `--unsafe-no-m4-sect3-escape`); `.direct` runs from srcdir; `.cn`
+option-conformance script; `.tables` serialized DFA for `.ser`/`.ver`.
 
-**Chosen approach: no `sh`/`m4` at test time.** Do the ruleset generation **once** on a machine
-that has `sh` + `m4`, commit the resulting concrete `.l`/`.txt` (and, where practical, the
-flex-generated `.c`), so the on-Windows test run needs only **MSVC + CTest**.
+## Windows design — FLEX: generate scanners at build time, run under CTest
 
-Rationale vs. the alternative (invoke `ruleset.sh`/`testmaker`/m4 live at build time): live
-generation tracks upstream with zero committed artifacts but forces every builder/CI to have
-`sh`+`m4` on PATH. Pre-generating trades a set of committed generated files for a dependency-free,
-deterministic `ctest` run — the better fit for an MSVC-centric project.
+**Chosen approach (revised during phase-1 implementation): generate each test scanner at build
+time with `win_flex`; commit no generated `.c`.** Verified that `win_flex.exe` produces a scanner
+with **no `m4` on PATH** (winflexbison's flex bundles its m4 stage), so the earlier worry that
+drove "pre-generate & commit the `.c`" does not apply to the per-scanner step. A CMake
+`add_custom_command` runs `win_flex --wincompat -o <name>.c <name>.l`; `--wincompat` is the
+winflexbison-recommended flag that maps `<unistd.h>`→`<io.h>` and `isatty`/`fileno`→`_isatty`/
+`_fileno`, so the suite also exercises that Windows code path. The generated `.c` lives in the
+build tree only.
+
+The residual `sh` dependency is narrow: only expanding the **`tableopts` list** needs `sh`. When
+that family is adopted, pre-generate just the list (or hand-enumerate the ~22 option combos in
+CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
+
+### Status — phase 1 implemented
+
+`winflexbison/tests/` now holds a working CTest harness (`tests/CMakeLists.txt` →
+`tests/flex/CMakeLists.txt` + `run_scanner_test.cmake`), wired from the root via
+`enable_testing()` + `add_subdirectory(tests)` (top-level builds only). Phase 1 covers the **19
+single-file, C, exit-code "simple" tests** (`basic_*`, `array_*`, `mem_*`, `string_*`, `debug_*`,
+`prefix_*`, `ccl`, `extended`, `quotes`, `quote_in_comment`, `posix`, `yyextra`, `alloc_extra`) —
+all passing under VS2022 x64 Release. The launcher redirects the `.txt` on stdin via
+`execute_process(INPUT_FILE …)` and honours `SKIP_RETURN_CODE 77`. Remaining phases (still future
+work): multi-file C (`header_*`, `multiple_scanners_*`, `top`), C++ (`cxx_*`, `c_cxx_*`),
+`reject`/`table`/`tableopts`, `direct` includes, `bison_*` (needs `win_bison`), and skip
+`pthread`/`options.cn` on MSVC.
 
 ### Components to build (future execution)
 
-1. **Import** the upstream suite from `orig/flex/tests` into `winflexbison/tests/flex`, keeping the
-   upstream sources (`.l`, `.rules`, `.txt`, `.direct`, the `*.sh`/`testmaker.m4` machinery)
-   separate from anything generated.
+1. **Import** the upstream sources from `orig/flex/tests` into `winflexbison/tests/flex/cases`
+   (`.l`/`.ll`/`.lll`, `.txt`, `.direct`, `.l4` and, for the generated families, the `*.sh`
+   machinery) — done for the phase-1 subset.
 
-2. **One-time generator step** (run under Git-Bash with `m4`):
-   - Invoke the imported `ruleset.sh` + `testmaker.sh` + `testmaker.m4` to emit every
-     `<stem>_<backend>[_<tableopt>].l` and its `.txt`.
-   - Commit those under a dedicated generated subdir (e.g. `tests/flex/generated/`) so a refresh
-     can wipe and regenerate cleanly.
-   - Capture the exact command in a reproducible script (e.g. `tests/flex/pregenerate.sh`) for the
-     next upgrade.
+2. **`tableopts` list expansion (only if that family is adopted)** — the sole `sh`-dependent step.
+   Either pre-generate the `tableopts.am` list once under Git-Bash and commit it, or hand-enumerate
+   the ~22 `-Ca/-Ce/-Cf/…` × `nr/r` combinations directly in CMake. The per-scanner step is still
+   a plain `win_flex` call; there is nothing to pre-generate for the non-`tableopts` tests.
 
 3. **`tests/CMakeLists.txt` + CTest mapping** — `enable_testing()` at the root,
    `add_subdirectory(tests)`, and for each test case:
@@ -126,8 +148,9 @@ new port change, add the matching test here.
 
 Because nothing is vendored yet, each upgrade **imports fresh from the new baseline** rather than
 merging over an old copy:
-- Flex: re-import `orig/flex/tests` for the new version into `tests/flex` (preserving the Windows
-  CMake/launcher/`pregenerate.sh` files), then re-run `pregenerate.sh`.
+- Flex: re-import `orig/flex/tests` for the new version into `tests/flex/cases` (preserving the
+  Windows `CMakeLists.txt`/`run_scanner_test.cmake`), and re-verify the suite mechanism against the
+  new baseline (newer flex uses different generation machinery — see the note above).
 - Bison: re-import the chosen `orig/bison/tests` `.at` subset for the new version.
 - Always import against the **new** baseline tag, never a branch tip
   ([02](../02-baseline-mirrors/spec.md)).
