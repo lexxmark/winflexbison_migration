@@ -59,7 +59,7 @@ The residual `sh` dependency is narrow: only expanding the **`tableopts` list** 
 that family is adopted, pre-generate just the list (or hand-enumerate the ~22 option combos in
 CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
 
-### Status — phases 1–2 implemented
+### Status — phases 1–3 implemented
 
 `winflexbison/tests/` now holds a working CTest harness (`tests/CMakeLists.txt` →
 `tests/flex/CMakeLists.txt` + `run_scanner_test.cmake`), wired from the root via
@@ -75,8 +75,23 @@ scanner `.l` carries `%option header="<stem>.h"`, so `win_flex` emits `<stem>.c`
 the build dir (run with `WORKING_DIRECTORY` = build dir so the bare header name lands there), and
 the generated `.c`(s) link with the hand-written `*_main.c`. **Suite is 24/24 green.**
 
-Remaining phases (still future work): C++ (`cxx_*`, `c_cxx_*`), `reject`/`table`/`tableopts`,
-`direct` includes, `bison_*` (needs `win_bison`), and skip `pthread`/`options.cn` on MSVC.
+Phase 3 adds the **5 C++ tests** (`cxx_basic`, `cxx_restart`, `c_cxx_nr`, `c_cxx_r`,
+`cxx_multiple_scanners`) via `add_flex_cxx_test()`: `.ll` → `win_flex -+` (a C++ `yyFlexLexer`
+scanner), `.lll` → `win_flex` without `-+` (C output compiled as C++), both `--wincompat`.
+`enable_language(CXX)` is scoped to the test tree so the C-only product build is untouched. Two
+MSVC-specific gotchas when compiling flex output as **C++** (both diagnosed and worked around in
+the test CMake, not the product):
+  1. **Don't link `winflexbison_common`** — its PUBLIC include of `common/m4/lib` brings gnulib's
+     replacement `<stdlib.h>`/`<stdint.h>`, illegal in C++. Use `common/misc` (for `config.h`) and
+     `flex/src` (for `<FlexLexer.h>`) directly.
+  2. **Undefine the root's global `-Dinline=__inline` / `-Drestrict=__restrict`** per C++ target
+     (`/Uinline /Urestrict`) — in C++ they macroize keywords and break `<xkeycheck.h>` and
+     `__declspec(restrict)` in the CRT.
+**Suite is 29/29 green.**
+
+Remaining phases (still future work): `reject`/`table`/`tableopts`, `direct` includes, `bison_*`
+(needs `win_bison`), the `cxx_yywrap.i3` args-not-stdin case, and skip `pthread`/`options.cn` on
+MSVC.
 
 ### Components to build (future execution)
 
