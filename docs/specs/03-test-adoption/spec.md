@@ -59,7 +59,7 @@ The residual `sh` dependency is narrow: only expanding the **`tableopts` list** 
 that family is adopted, pre-generate just the list (or hand-enumerate the ~22 option combos in
 CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
 
-### Status — phases 1–3 implemented
+### Status — phases 1–4 implemented
 
 `winflexbison/tests/` now holds a working CTest harness (`tests/CMakeLists.txt` →
 `tests/flex/CMakeLists.txt` + `run_scanner_test.cmake`), wired from the root via
@@ -89,9 +89,23 @@ the test CMake, not the product):
      `__declspec(restrict)` in the CRT.
 **Suite is 29/29 green.**
 
-Remaining phases (still future work): `reject`/`table`/`tableopts`, `direct` includes, `bison_*`
-(needs `win_bison`), the `cxx_yywrap.i3` args-not-stdin case, and skip `pthread`/`options.cn` on
-MSVC.
+Phase 4 adds the **4 reject/table tests** (`reject_nr`, `reject_r`, `reject_ver`, `reject_ser`)
+via `add_flex_generated_test()`: all generated from one `reject.l4` template with
+`--unsafe-no-m4-sect3-escape` (so `win_flex` expands its section-3 m4 macros) plus per-variant
+flags/defines. `reject_nr/r` read `reject.txt` on stdin; `reject_ver/ser` use **external
+serialized DFA tables** — `win_flex` emits a `.tables` file and the scanner takes `<tables>
+<input>` as **argv**, so `run_scanner_test.cmake` gained `ARG1`/`ARG2` positional-arg support.
+  - **Windows gap found:** flex's serialized-tables output unconditionally `#include`s
+    `<netinet/in.h>` (for `ntohs`/`ntohl`), which MSVC lacks — so `win_flex`'s serialized-tables
+    output is **not self-compilable on MSVC** without a substitute. Worked around with a test-only
+    shim (`tests/flex/shim/netinet/in.h`) providing the four byte-order helpers via MSVC
+    intrinsics; the product skeleton is untouched. Candidate for a real port fix (guard the include
+    or ship a Windows `htonl`/`ntohl`), tracked in [04](../04-port-change-catalog/spec.md).
+**Suite is 33/33 green.**
+
+Remaining phases (still future work): `tableopts` (the generated family), `direct` includes,
+`bison_*` (needs `win_bison`), the `cxx_yywrap.i3` args-not-stdin case, the `lineno.one`
+comparison-mode tests, and skip `pthread`/`options.cn` on MSVC.
 
 ### Components to build (future execution)
 
