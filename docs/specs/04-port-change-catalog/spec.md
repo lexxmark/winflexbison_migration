@@ -1,0 +1,164 @@
+# 04 — Port Change Catalog
+
+**Task:** Catalog every category of change made to the vendored source because of the Windows/MSVC
+port, so those changes can be faithfully **replayed** on a newer upstream. Also define how to
+regenerate the authoritative diffs from the baselines.
+
+The changes fall into **7 categories**. Categories 1–2 are bulk but **mechanical** (redo by
+re-vendoring / regenerating). Categories 3–6 are the **hand-maintained patch set** — small,
+localized, and the real work of an upgrade. Category 7 is the build system.
+
+---
+
+## 1. Bundled dependency vendoring *(mechanical, largest surface)*
+
+Upstream bison/m4 pull gnulib and (for bison) an external m4 via autotools. winflexbison instead
+**checks in** the code:
+
+- `common/misc/` — a gnulib subset + libbison support (bitset, obstack, hash, quotearg, argmatch,
+  xalloc, timevar, mbswidth, `bitset/`, `glthread/`, …). Maps to **bison-side gnulib**
+  (`orig/gnulib` @ `7818455…`).
+- `common/m4/` — a **complete bundled GNU m4** (`m4.c`, `builtin.c`, `eval.c`, …) with its own
+  gnulib in `common/m4/lib/` — maps to **m4-side gnulib** (`orig/gnulib` @ `3639c57…`). Exists
+  because bison needs an m4 processor at runtime and it is linked in-process (see category 5).
+
+**Replay:** re-vendor from the new baselines rather than merging line-by-line. Preserve the two
+build exclusions (they mirror upstream's own build):
+- `common/CMakeLists.txt` excludes `m4/lib/regexec.c`, `regcomp.c`, `regex_internal.c`,
+  `malloc/dynarray-skeleton.c` — these are `#include`-d into other TUs (gnulib amalgamation);
+  compiling them standalone double-defines symbols.
+
+## 2. Generated files committed *(mechanical)*
+
+Upstream produces these at build time; winflexbison commits them so no flex/bison/sh/m4 is needed
+to bootstrap:
+
+| Tool | Committed generated file | Generated from |
+|---|---|---|
+| Flex | `flex/src/scan.c` | `scan.l` |
+| Flex | `flex/src/parse.c`, `parse.h` | `parse.y` |
+| Flex | `flex/src/skel.c` | `flex.skl` via `mkskel.sh` |
+| Bison | `bison/src/parse-gram.c`, `parse-gram.h` | `parse-gram.y` |
+| Bison | `bison/src/scan-gram.c`, `scan-code.c`, `scan-skel.c` | the `.l` files |
+
+**Replay:** regenerate from the new upstream (with a bootstrap flex/bison/m4), then re-apply any
+in-generated-file port touches (e.g. the flex `--wincompat` emission lands inside `scan.c`/`skel.c`
+string tables — those follow automatically once category 4 is in the skeleton source).
+
+**Bison build note (do not "fix"):** `bison/CMakeLists.txt` excludes `scan-code.c`, `scan-gram.c`,
+`scan-skel.c` from direct compilation because each is `#include`-d by a thin wrapper TU
+(`scan-code-c.c`, `scan-gram-c.c`, `scan-skel-c.c`). This is intentional and mirrors upstream.
+
+## 3. Hand-written MSVC `config.h` ×2 *(hand-maintained)*
+
+Replace autoconf-generated config. **These are the primary porting artifacts.**
+
+- `common/misc/config.h` — the big one. `#include <io.h>`; defines `STDIN/STDOUT/STDERR_FILENO`,
+  `ssize_t`; stubs the entire gnulib `_GL_ATTRIBUTE_*` family, `_Static_assert`, `_Noreturn`,
+  `_GL_INLINE`/`_GL_EXTERN_INLINE`, `S_ISDIR`, etc. (the keyword/attribute shims gnulib normally
+  derives from autoconf).
+- `bison/src/config.h` — `#pragma once`; version/package strings, `ssize_t`→`ptrdiff_t`,
+  `RENAME_OPEN_FILE_WORKS`, an `fopen`→`_fsopen(…,_SH_DENYNO)` redirect (Windows share semantics),
+  prototypes for `_stpcpy`, `strverscmp`, `obstack_printf` (provided by `common`).
+
+**Replay:** carry these forward mostly as-is; reconcile against the new gnulib's `_GL_*` macro set
+(new gnulib may add/rename attribute macros that need new stubs) and the new bison's `config.h.in`
+feature list.
+
+## 4. `unistd.h` avoidance (not shimming) *(hand-maintained)*
+
+There is **no `unistd.h` shim file**. Two mechanisms instead:
+- Build-time: `common/misc/config.h` pulls `<io.h>` and defines the `*_FILENO` macros.
+- Emit-time: flex's `--wincompat` option makes **generated scanners** emit `<io.h>` +
+  `#define isatty _isatty` / `#define fileno _fileno` instead of `<unistd.h>`. Documented in
+  `winflexbison/UNISTD_ERROR.readme`. The option is wired in `flex/src/main.c` (help text at
+  `main.c:1976`) and its output lives in `flex/src/flex.skl` (→ `scan.c`/`skel.c`).
+
+**Replay:** ensure the `--wincompat` block survives in the new `flex.skl`; regenerate `scan.c`/
+`skel.c`.
+
+## 5. In-process subprocess replacement *(hand-maintained — deepest logic rewrites)*
+
+POSIX `fork`/`pipe`/`exec` pipelines don't exist on MSVC; both are replaced with temp-file /
+in-process equivalents.
+
+- **flex filter chain** — `flex/src/filter.c`. Upstream's `pipe()`/`fork()`/`execvp()` body is
+  wrapped in `#if 0 … #endif` (lines **257–327**; a second `#if 0` block at **107–161**) and
+  replaced with a temp-file implementation using `<io.h>`/`<process.h>` and
+  `add_tmp_dir()` (line **43**, honoring `FLEX_TMP_DIR`).
+- **bison → m4** — `bison/src/output.c`. Upstream opens a bidirectional pipe to an external `m4`;
+  winflexbison declares `main_m4(...)` (line **724**), writes the m4 program to a temp file
+  (`pid_tempname("~m4_in_")`, line **817**), calls the **bundled** m4 in-process (line **840**),
+  reads back a temp output file. `#include <spawn-pipe.h>` is commented out (line **30**).
+- **exe/data location** — `common/misc/app_path.c` (`get_app_path()` via `GetModuleFileNameA`) and
+  `relocatable.c` (`GetModuleFileName`) let bison find its `data/` skeletons next to the exe. The
+  m4 entry point is renamed `main`→`main_m4` in `common/m4/m4.c` (line ~406) so it links into
+  `win_bison.exe`.
+
+**Replay:** these are the highest-risk merges — diff the new upstream `filter.c` / `output.c`
+carefully; the surrounding upstream code often changes around the `#if 0` regions.
+
+## 6. Scattered `#ifdef _MSC_VER` blocks *(hand-maintained — small)*
+
+Very few, **flex only** (bison proper has **zero** inline ifdefs):
+- `flex/src/flexdef.h:44-46` — `#if _MSC_VER < 1900` `#define snprintf _snprintf` (pre-VS2015).
+- `flex/src/tables.c:39-41` — `htonl`/`htons` via `_byteswap_ulong`/`_byteswap_ushort`.
+- `flex/src/main.c:181-182` — `_setmode(_fileno(stdout/stderr), _O_BINARY)` for binary stdio; plus
+  `<io.h>`/`<process.h>` includes and the `--wincompat` help text (`main.c:1976`).
+
+**Replay:** these are self-contained; re-apply verbatim to the same functions in the new flex.
+
+## 7. Build-system flags *(mechanical)*
+
+In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
+- Root: `-D_CRT_SECURE_NO_WARNINGS`, `-Dinline=__inline` (ucrt C-mode bug), `-Drestrict=__restrict`
+  (VS2017), `__extension__=` (MSVC-only, not clang-cl), `-D_DEBUG` (Debug),
+  `/source-charset:utf-8`, optional `/MD`→`/MT` (`USE_STATIC_RUNTIME`).
+- Subdirs: `-D_LIB` (common), `-D_CONSOLE` (both exes), link `kernel32.lib user32.lib`,
+  `C_STANDARD 90` for common.
+
+Additional keyword/attribute coping lives in `common/misc/config.h` (category 3), not the build
+system.
+
+---
+
+## Regenerating the authoritative diffs
+
+The diffs ARE the catalog's ground truth. Regenerate them from the baselines
+([02](../02-baseline-mirrors/spec.md)) and store the artifacts in this folder
+(`04-port-change-catalog/diffs/`) so an upgrade can see exactly what must survive.
+
+```sh
+ROOT=C:/Users/azhon/source/repos/winflexbison
+OUT=$ROOT/docs/specs/04-port-change-catalog/diffs
+mkdir -p "$OUT"
+
+# Flex: vendored vs baseline (exclude committed generated files for the hand-patch view)
+diff -ru "$ROOT/orig/flex/src" "$ROOT/winflexbison/flex/src" \
+     -x scan.c -x parse.c -x parse.h -x skel.c > "$OUT/flex-src.patch"
+
+# Bison src: vendored vs baseline (exclude generated + the injected config.h)
+diff -ru "$ROOT/orig/bison/src" "$ROOT/winflexbison/bison/src" \
+     -x 'parse-gram.*' -x 'scan-*.c' > "$OUT/bison-src.patch"
+
+# M4: vendored vs baseline
+diff -ru "$ROOT/orig/m4/src" "$ROOT/winflexbison/common/m4" > "$OUT/m4-src.patch"
+
+# gnulib (bison-side → common/misc): checkout the bison-pin first
+git -C "$ROOT/orig/gnulib" checkout 7818455627c5e54813ac89924b8b67d0bc869146
+diff -ru "$ROOT/orig/gnulib/lib" "$ROOT/winflexbison/common/misc" > "$OUT/gnulib-misc.patch"
+
+# gnulib (m4-side → common/m4/lib): switch to the m4-pin
+git -C "$ROOT/orig/gnulib" checkout 3639c57a970191e0bf7a9789bd1341786d0255a1
+diff -ru "$ROOT/orig/gnulib/lib" "$ROOT/winflexbison/common/m4/lib" > "$OUT/gnulib-m4lib.patch"
+```
+
+> Path caveats: the vendored trees are re-organized relative to upstream (e.g. bison's `lib/`
+> gnulib is split into `common/misc`; m4's gnulib is under `common/m4/lib`). The `diff` roots above
+> are approximate — expect "only in" noise from the reorg and from vendored files that were dropped.
+> The **signal** is the per-file hunks in the hand-maintained files (categories 3–6): `filter.c`,
+> `output.c`, `flexdef.h`, `tables.c`, `main.c`, the two `config.h`, `app_path.c`, `relocatable.c`,
+> `m4.c`. Focus the review there.
+
+Regenerating these diffs (against the OLD baseline) at the start of an upgrade confirms the catalog
+above still matches reality before you touch anything.
