@@ -59,7 +59,7 @@ The residual `sh` dependency is narrow: only expanding the **`tableopts` list** 
 that family is adopted, pre-generate just the list (or hand-enumerate the ~22 option combos in
 CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
 
-### Status — phase 1 implemented
+### Status — phases 1–2 implemented
 
 `winflexbison/tests/` now holds a working CTest harness (`tests/CMakeLists.txt` →
 `tests/flex/CMakeLists.txt` + `run_scanner_test.cmake`), wired from the root via
@@ -67,10 +67,16 @@ CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
 single-file, C, exit-code "simple" tests** (`basic_*`, `array_*`, `mem_*`, `string_*`, `debug_*`,
 `prefix_*`, `ccl`, `extended`, `quotes`, `quote_in_comment`, `posix`, `yyextra`, `alloc_extra`) —
 all passing under VS2022 x64 Release. The launcher redirects the `.txt` on stdin via
-`execute_process(INPUT_FILE …)` and honours `SKIP_RETURN_CODE 77`. Remaining phases (still future
-work): multi-file C (`header_*`, `multiple_scanners_*`, `top`), C++ (`cxx_*`, `c_cxx_*`),
-`reject`/`table`/`tableopts`, `direct` includes, `bison_*` (needs `win_bison`), and skip
-`pthread`/`options.cn` on MSVC.
+`execute_process(INPUT_FILE …)` and honours `SKIP_RETURN_CODE 77`.
+
+Phase 2 adds the **5 multi-file C tests** (`header_nr`, `header_r`, `top`,
+`multiple_scanners_nr`, `multiple_scanners_r`) via an `add_flex_multifile_test()` helper: each
+scanner `.l` carries `%option header="<stem>.h"`, so `win_flex` emits `<stem>.c` + `<stem>.h` into
+the build dir (run with `WORKING_DIRECTORY` = build dir so the bare header name lands there), and
+the generated `.c`(s) link with the hand-written `*_main.c`. **Suite is 24/24 green.**
+
+Remaining phases (still future work): C++ (`cxx_*`, `c_cxx_*`), `reject`/`table`/`tableopts`,
+`direct` includes, `bison_*` (needs `win_bison`), and skip `pthread`/`options.cn` on MSVC.
 
 ### Components to build (future execution)
 
