@@ -59,7 +59,7 @@ The residual `sh` dependency is narrow: only expanding the **`tableopts` list** 
 that family is adopted, pre-generate just the list (or hand-enumerate the ~22 option combos in
 CMake) — not the scanners. So the on-Windows run needs only **MSVC + CTest**.
 
-### Status — phases 1–4 implemented
+### Status — flex suite complete (112/112)
 
 `winflexbison/tests/` now holds a working CTest harness (`tests/CMakeLists.txt` →
 `tests/flex/CMakeLists.txt` + `run_scanner_test.cmake`), wired from the root via
@@ -103,9 +103,29 @@ serialized DFA tables** — `win_flex` emits a `.tables` file and the scanner ta
     or ship a Windows `htonl`/`ntohl`), tracked in [04](../04-port-change-catalog/spec.md).
 **Suite is 33/33 green.**
 
-Remaining phases (still future work): `tableopts` (the generated family), `direct` includes,
-`bison_*` (needs `win_bison`), the `cxx_yywrap.i3` args-not-stdin case, the `lineno.one`
-comparison-mode tests, and skip `pthread`/`options.cn` on MSVC.
+Phase 5 finalizes the flex suite:
+- **direct (5)** — `include_by_buffer`/`push`/`reentrant`, `rescan_nr`/`r`: run from the cases dir
+  with the input as `argv[1]` so the scanner's relative include-file opens resolve
+  (`run_scanner_test.cmake` gained `WORKDIR` + `ARG3`).
+- **lineno comparison-mode (3)** — `lineno_nr`/`r`/`trailing` via `run_compare_test.cmake`: run the
+  scanner twice on the same stdin and require flex's `yylineno` output to equal the reference
+  newline count.
+- **posixly_correct** — generated with `POSIXLY_CORRECT=1` in the flex env.
+- **cxx_yywrap** — C++ scanner whose `main` takes input file(s) as `argv`.
+- **bison (3)** — `bison_nr`/`yylloc`/`yylval`: link a `win_bison`-generated parser + a
+  `win_flex`-generated scanner + a hand-written `*_main.c`; registered only when the `win_bison`
+  target exists. Exercises win_bison and win_flex together.
+- **tableopts (66)** — `-Ca … -Caem` × `{nr,r}` × `{opt,ser,ver}`, enumerated directly in CMake
+  (no `sh`; reuses `add_flex_generated_test`). `ser`/`ver` feed input on stdin (`STDIN_INPUT`) so
+  the reentrant main's default-stdin `yyin` path works. Case-safe labels avoid the `-Cf`/`-CF` and
+  `-Caef`/`-CaeF` filename collisions on Windows.
+
+**Intentionally excluded on MSVC:** `pthread.pthread` (needs a POSIX pthreads lib) and `options.cn`
+(a `sh` option-conformance script, not a scanner).
+
+**The flex suite is complete: 112/112 green** under VS2022 x64 Release. The one product-level gap
+surfaced is the serialized-tables `<netinet/in.h>` include (see Phase 4), worked around with a test
+shim and tracked as a candidate port fix in [04](../04-port-change-catalog/spec.md).
 
 ### Components to build (future execution)
 
