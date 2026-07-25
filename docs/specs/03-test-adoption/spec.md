@@ -156,22 +156,96 @@ shim and tracked as a candidate port fix in [04](../04-port-change-catalog/spec.
    - `pthread.pthread` — needs a pthreads lib; likely **skip on MSVC**.
    - `options.cn`, `test-yydecl-*.sh` — shell-based option checks; port to CTest or skip.
 
-## Windows design — BISON: source & adapt the autotest suite
+## Windows design — BISON: scoping the autotest suite
 
-Bison tests are sourced from `orig/bison/tests` (29 `.at` files + `testsuite.at`).
+Bison tests are sourced from `orig/bison/tests` (@ `v3.8.2`). Unlike flex's exit-code model, this
+is a full **GNU Autotest** suite and is much larger and more POSIX-coupled.
 
-- Bison uses **GNU Autotest**: `.at` files are m4 macros compiled by `autom4te` into a single
-  `testsuite` shell script, run as `./testsuite`. This is heavier and more POSIX-coupled than
-  flex's exit-code model (it expects `sh`, `m4`, `diff`, a working `bison`, and per-language
-  toolchains for C/C++/Java/D tests), so it cannot be pre-flattened the way flex is.
-- Windows adaptation options to evaluate when this is executed:
-  1. Run the generated `testsuite` under Git-Bash/MSYS against the built `win_bison.exe` — closest
-     to upstream; requires the POSIX toolset at test time (a deliberate exception to the flex
-     "MSVC-only at test time" stance, because bison autotest is impractical to flatten).
-  2. Select a **toolchain-light subset** of `.at` groups (e.g. `input.at`, `output.at`,
-     `reduce.at`, `conflicts.at`) and drive them via CTest, skipping Java/D/`c++` groups.
-- **This pass documents the sourcing and options only**; choosing and implementing the bison
-  harness is future work.
+### Inventory (measured against the v2.8.2/3.8.2 baseline)
+
+- `testsuite.at` `m4_include`s **27** `.at` files (plus `local.at` = the macro library, and
+  `testsuite.h`). Total ≈ **287 `AT_SETUP` groups**; parameterized files (esp. `calc.at`, and the
+  `c++`/`glr` families that loop over variants) expand to **~600+ actual test groups** in the
+  generated `testsuite`.
+- **Build:** `autom4te --language=autotest testsuite.at -o testsuite` compiles the `.at` m4 into
+  one ~MB POSIX shell script. Needs `autom4te` (autoconf) + `m4` + `perl`.
+- **Run:** `sh testsuite -C tests` — needs `atconfig` + `atlocal` (normally produced by bison's
+  `configure`; they fill in `CC`, `CXX` with the `CXX98…CXX2B` flag sets, `DC` for D,
+  `CONF_JAVAC`/`CONF_JAVA` for Java, `EXEEXT`, warning flags, `BISON`), plus `sh`, `diff`, `sed`,
+  `grep`. A group whose toolchain var is empty **skips** itself (`BISON_CXX_WORKS=false`, etc.).
+- `bison` is invoked as a drop-in — `win_bison.exe` matches the CLI, and needs its `data/`
+  skeletons discoverable (next to the exe, or `BISON_PKGDATADIR`).
+
+### Toolchain profile per file (how portable each group is)
+
+Measured by `AT_BISON_CHECK` (run bison, check output — no compiler) vs `AT_COMPILE`/
+`AT_PARSER_CHECK` (compile & run a generated parser) vs Java/D:
+
+| Tier | Files | Needs |
+|---|---|---|
+| **Toolchain-FREE** (run `bison`, diff diagnostics/report/`.output`/sets — no compiler) | `diagnostics`, `report`, `sets`, `counterexample`, `m4`, `existing`, `named-refs`, most of `input` (67 groups, ~diagnostics), most of `conflicts` (44), `reduce`, `skeletons`, `output`, `synclines` | `win_bison` + `sh` + `diff` only |
+| **C compiler** (compile+run generated C parser) | `actions`, `regression`, `torture`, `push`, `headers`, `types`, parts of `input`/`conflicts` | + `CC` |
+| **C++ compiler** | `c++` (26 runs), `glr-regression` (43 runs, C++), `cxx-type` | + `CXX` (multiple `-std` levels) |
+| **Java** | `java` (111), `javapush` (14), `calc` (37 Java variants) | + `javac`/`java` |
+| **D** | `d`, one `scanner`/`calc` variant | + `DC` (gdc/ldc) |
+
+The toolchain-free tier is the high-value, high-portability core: it validates win_bison's grammar
+analysis, conflict/counterexample reporting, diagnostics, `.output` reports, first/follow sets, and
+generated-file naming — i.e. most of what the Windows port can actually break — **without any
+compiler**.
+
+### Windows-specific risks (must be validated, not assumed)
+
+1. **Building `testsuite`** needs `autom4te`, absent on stock Windows. Mitigation: pre-generate the
+   `testsuite` script once on a POSIX box and commit it (as the flex plan does for generated
+   artifacts), regenerating on each bison upgrade.
+2. **Output diffs from Windows-isms:** synclines/`#line` directives, error messages, and `.output`
+   reports embed **file paths** — backslashes vs `/`, drive letters, and CRLF can make otherwise-
+   passing groups mismatch their expected output. `synclines.at`, `headers.at`, `diagnostics.at`
+   and any group that greps generated `#line` are the likely offenders; expect a per-group triage
+   pass, not a clean 100%.
+3. **`atconfig`/`atlocal` must be hand-authored** (no autoconf `configure` runs here) — set
+   `BISON=win_bison`, `EXEEXT=.exe`, leave `CXX`/`DC`/`CONF_JAVAC` empty to auto-skip those tiers
+   at first, and point `CC` at whatever compiler is chosen (see next).
+4. **Which C/C++ compiler drives the compile tiers?** Autotest drives `$CC $CFLAGS` in a shell,
+   which fits **MinGW gcc/g++** far more naturally than MSVC `cl` (arg syntax, `-o`, exit codes).
+   Using MinGW validates *win_bison's output*, but not *MSVC-compilation of that output*. Testing
+   the MSVC path is better served by the CTest-native "our own tests" below.
+
+### Recommended architecture — hybrid (not one or the other)
+
+Flattening bison autotest into CTest the way flex was flattened is **impractical** (the grammars +
+expected outputs are embedded in autotest m4; extracting ~287 groups by hand loses fidelity and is
+enormous). So:
+
+- **B1 — CTest-native bison smoke/port tests (MSVC, default build).** A small hand-authored set
+  under the "our own tests" umbrella: `win_bison --version`, generate a parser from a canned `.y`,
+  **compile it with the detected MSVC** and run it, plus a few `--output`/`--defines`/`--graph`/
+  `--report` and relocatable-`data/` checks. This is what proves the Windows/MSVC path and it is
+  cheap. **Do this first.**
+- **B2 — Full upstream autotest, opt-in, under Git-Bash + MinGW.** Commit a pre-generated
+  `testsuite` + hand-authored `atconfig`/`atlocal`; run `sh testsuite` against `win_bison.exe` as a
+  separate, non-default target (its own CMake option / CI job), gated on `sh`+`gcc` being present.
+  Start by running only the **toolchain-free tier** (leave `CC`/`CXX`/`DC`/`javac` unset so the
+  compile/Java/D tiers auto-skip), triage the path/CRLF diffs, then enable the C tier with MinGW.
+
+This mirrors the project's split: the MSVC-native CTest run stays dependency-free and is the gate;
+the faithful upstream autotest is an optional deeper check.
+
+### Phased plan
+
+1. **Scope & smoke (B1):** author the CTest-native bison smoke/port tests; wire a `bison/` subdir
+   under `tests/` alongside `flex/`. Proves win_bison end-to-end on MSVC. *(next actionable step)*
+2. **Autotest bring-up (B2a):** pre-generate + commit `testsuite`; hand-author `atconfig`/`atlocal`
+   (toolchain-free only); get `sh testsuite` running the free tier under Git-Bash against
+   win_bison; record the baseline pass/skip/xfail counts and triage path/CRLF diffs.
+3. **C tier (B2b):** add MinGW `CC`; enable `actions`/`regression`/`push`/`headers`/`torture`.
+4. **C++ tier (B2c):** add MinGW `CXX`; enable `c++`/`glr-regression`/`cxx-type`.
+5. **Java/D (B2d, optional):** only if a `javac`/D toolchain is worth requiring; otherwise leave
+   permanently skipped and documented.
+
+**This pass is scoping only** — no bison tests are wired yet. B1 is the recommended next
+implementation step.
 
 ## Windows design — our own tests (author, don't import)
 
