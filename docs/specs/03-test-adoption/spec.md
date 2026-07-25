@@ -244,8 +244,37 @@ the faithful upstream autotest is an optional deeper check.
 5. **Java/D (B2d, optional):** only if a `javac`/D toolchain is worth requiring; otherwise leave
    permanently skipped and documented.
 
-**This pass is scoping only** — no bison tests are wired yet. B1 is the recommended next
-implementation step.
+### Status — bison harness bootstrapped (B1 + golden-diff proof)
+
+`winflexbison/tests/bison/` now implements the hybrid, with the everyday Windows run staying
+CTest-native and WSL-free:
+
+- **compile-run (exit-code, MSVC)** — `cases/calc.y` is a self-contained calculator (integrated
+  scanner + `main`); `win_bison` generates the parser, MSVC compiles it, the exe runs with input on
+  stdin, pass == exit 0 (`run_parser_test.cmake`). Proves win_bison end-to-end on Windows.
+- **golden-diff (Windows-native)** — `win_bison` runs on each `golden-cases/*.y` and its
+  stdout/stderr/exit are compared against `golden/` captured from **reference bison 3.8.2**
+  (`run_bison_test.cmake`). Golden is regenerated under WSL by `generate.sh` and committed; a
+  checkout without golden simply registers no golden tests.
+- **Portability tricks that made golden stable:** invoke by bare filename from the cases dir (stable
+  `name.y:line` paths); normalize the actual output for Windows-isms — `CRLF→LF`,
+  `win_bison[.exe]:→bison:`, `\→/`, and fold locale-dependent fancy quotes (`‘’“”`) to ASCII; and
+  run with `-fno-caret` to compare the semantic diagnostic rather than the caret rendering.
+- **Fixtures:** `clean` (silent happy path), `sr_conflict` (S/R conflict count), `undef`
+  (undefined-symbol error, exit 1), `useless` (useless nonterminal/rule warnings).
+
+**Port finding (candidate fix for [04](../04-port-change-catalog/spec.md)):** win_bison **omits the
+echoed source line in caret diagnostics on Windows** — it prints the `N |` prefix and the `^~~~`
+markers but a blank source line, even for LF-only input. The golden suite sidesteps this with
+`-fno-caret`; the underlying caret source-echo path is worth a dedicated port fix (win_bison cannot
+re-read/echo the grammar line on Windows).
+
+Full suite (flex + bison) is **117/117 green** under VS2022 x64 Release.
+
+The WSL side (`generate.sh` + reference bison 3.8.2) is proven. **Next**: grow `golden-cases/` (the
+toolchain-free tier — more `input`/`conflicts`/`output`/`report` grammars) and, separately,
+pre-generate + commit the faithful `testsuite` (B2) once broader coverage is wanted. This pass
+established the pipeline; scaling the fixture set is incremental.
 
 ## Windows design — our own tests (author, don't import)
 
