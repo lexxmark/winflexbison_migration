@@ -112,3 +112,8 @@ The project version is set once, in the `project(winflexbison VERSION x.y.z ...)
 root `CMakeLists.txt`. Bump it there and add a matching entry at the top of `changelog.md` when
 cutting a release. Per `README.md`: 2.4.x package versions bundle Bison 2.7, 2.5.x bundle Bison
 3.x.
+
+## Commit messages
+
+Keep them short: a concise summary line, and at most a couple of body lines only when the *why*
+isn't obvious. Don't restate the diff or write long explanations.
