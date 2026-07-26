@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-This working directory contains the project plus supporting material:
+This working directory (`winflexbison_migration/`) contains the project plus supporting material:
 
-- `winflexbison/winflexbison/` — the actual project: a Windows port of Flex and Bison
+- `winflexbison/` — the actual project: a Windows port of Flex and Bison
   (`lexxmark/winflexbison` on GitHub). This is where almost all work happens.
 - `orig/` — pristine upstream **baseline mirrors**, each checked out at the exact tag matching the
   currently vendored version, used for diffing when porting/upgrading: `orig/flex` (@ `v2.6.4`),
@@ -17,7 +17,7 @@ This working directory contains the project plus supporting material:
   flex/bison/m4 releases (version inventory, baselines, test adoption, the Windows port-change
   catalog, upgrade runbook, validation gate). Start at `docs/specs/README.md`.
 
-Unless told otherwise, assume any task refers to `winflexbison/winflexbison/`. When diffing against
+Unless told otherwise, assume any task refers to `winflexbison/`. When diffing against
 upstream, use `orig/<component>` as the baseline — not a fresh `master` checkout, which is newer
 than the vendored version.
 
@@ -26,7 +26,7 @@ than the vendored version.
 Requires Visual Studio 2017+ and CMake. Only MSVC (and clang-cl) toolchains are officially
 supported (the root `CMakeLists.txt` warns if `MSVC` is not set).
 
-Quick build via provided batch scripts (from `winflexbison/winflexbison/`), each configures with
+Quick build via provided batch scripts (from `winflexbison/`), each configures with
 the matching VS generator, builds Release, and produces a `cpack` zip package:
 
 ```

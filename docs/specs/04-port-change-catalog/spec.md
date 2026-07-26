@@ -177,7 +177,7 @@ The diffs ARE the catalog's ground truth. Regenerate them from the baselines
 (`04-port-change-catalog/diffs/`) so an upgrade can see exactly what must survive.
 
 ```sh
-ROOT=C:/Users/azhon/source/repos/winflexbison
+ROOT=C:/Users/azhon/source/repos/winflexbison_migration
 OUT=$ROOT/docs/specs/04-port-change-catalog/diffs
 mkdir -p "$OUT"
 
