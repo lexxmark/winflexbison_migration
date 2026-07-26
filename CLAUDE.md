@@ -56,6 +56,12 @@ Built executables always land in `bin/Release/win_flex.exe` and `bin/Release/win
 of which build tree (`CMakeBuildVS2022/`, `CMakeBuild/build/<preset>/`, etc.) produced them; only
 intermediate build files and the packaged zip live under the build tree itself.
 
+`bin/Release/` must stay free of anything that isn't shipped: CPack does
+`install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE}/" DESTINATION "./")`, so every file
+sitting there goes into the release zip — including artifacts left over from earlier builds.
+Test executables are therefore redirected to `<build tree>/tests/bin/` by `tests/CMakeLists.txt`;
+any new target that isn't part of the product needs the same treatment.
+
 CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2017/2019/2022 x64+Win32 with MSVC,
 and GitHub Actions (`.github/workflows/os_windows.yaml`) builds with `clang-cl` via Ninja. Both
 just run the CMake configure/build/package sequence above.
