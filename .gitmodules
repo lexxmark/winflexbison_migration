@@ -1,14 +1,14 @@
-[submodule "orig/flex"]
-	path = orig/flex
+[submodule "upstream/flex"]
+	path = upstream/flex
 	url = https://github.com/westes/flex.git
-[submodule "orig/bison"]
-	path = orig/bison
+[submodule "upstream/bison"]
+	path = upstream/bison
 	url = https://github.com/akimd/bison.git
-[submodule "orig/m4"]
-	path = orig/m4
+[submodule "upstream/m4"]
+	path = upstream/m4
 	url = https://git.savannah.gnu.org/git/m4.git
-[submodule "orig/gnulib"]
-	path = orig/gnulib
+[submodule "upstream/gnulib"]
+	path = upstream/gnulib
 	url = https://git.savannah.gnu.org/git/gnulib.git
 [submodule "winflexbison"]
 	path = winflexbison

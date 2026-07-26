@@ -9,13 +9,13 @@ green before merge.
 
 **winflexbison has no vendored tests.** `winflexbison/tests/` is empty and there is no CTest
 wiring anywhere (no `enable_testing()`/`add_test()` in any `CMakeLists.txt`, no
-`add_subdirectory(tests)`). Test adoption is therefore a **greenfield import** from the `orig/`
+`add_subdirectory(tests)`). Test adoption is therefore a **greenfield import** from the `upstream/`
 baselines — there is nothing pre-existing to preserve or refresh.
 
 Source material lives in the baselines ([02](../02-baseline-mirrors/spec.md)):
-- `orig/flex/tests` — the full upstream flex suite (~39 `.l` inputs + `.rules`/`.txt`/`.direct`
+- `upstream/flex/tests` — the full upstream flex suite (~39 `.l` inputs + `.rules`/`.txt`/`.direct`
   fixtures and the automake/m4 harness).
-- `orig/bison/tests` — 29 `.at` autotest files + `testsuite.at`.
+- `upstream/bison/tests` — 29 `.at` autotest files + `testsuite.at`.
 
 ## How the upstream FLEX suite works (why it ports easily)
 
@@ -34,7 +34,7 @@ The key property: **pass/fail is the scanner's exit code, not golden-output diff
   (`nr`/`r`) × mode (`opt`/`ser`/`ver`), all from the single template `tableopts.l4`. Generating
   the *list* needs `sh`; generating each *scanner* is a normal `win_flex` invocation.
 
-> **Note (verified against `orig/flex` @ v2.6.4):** this baseline does **not** use the
+> **Note (verified against `upstream/flex` @ v2.6.4):** this baseline does **not** use the
 > `.rules`/`ruleset.sh`/`testmaker.m4` machinery found on newer flex `master`. Re-verify the exact
 > mechanism against the target baseline before adopting a newer flex — the file conventions below
 > are v2.6.4's.
@@ -129,7 +129,7 @@ shim and tracked as a candidate port fix in [04](../04-port-change-catalog/spec.
 
 ### Components to build (future execution)
 
-1. **Import** the upstream sources from `orig/flex/tests` into `winflexbison/tests/flex/cases`
+1. **Import** the upstream sources from `upstream/flex/tests` into `winflexbison/tests/flex/cases`
    (`.l`/`.ll`/`.lll`, `.txt`, `.direct`, `.l4` and, for the generated families, the `*.sh`
    machinery) — done for the phase-1 subset.
 
@@ -158,7 +158,7 @@ shim and tracked as a candidate port fix in [04](../04-port-change-catalog/spec.
 
 ## Windows design — BISON: scoping the autotest suite
 
-Bison tests are sourced from `orig/bison/tests` (@ `v3.8.2`). Unlike flex's exit-code model, this
+Bison tests are sourced from `upstream/bison/tests` (@ `v3.8.2`). Unlike flex's exit-code model, this
 is a full **GNU Autotest** suite and is much larger and more POSIX-coupled.
 
 ### Inventory (measured against the v2.8.2/3.8.2 baseline)
@@ -327,16 +327,16 @@ Areas still to cover:
 
 These live alongside the imported suites under the same CTest wiring
 ([section above](#windows-design--flex-pre-generate--commit-run-under-ctest)) but are **not**
-refreshed from `orig/` on upgrade — they are ours to keep and extend. When [04]'s catalog gains a
+refreshed from `upstream/` on upgrade — they are ours to keep and extend. When [04]'s catalog gains a
 new port change, add the matching test here.
 
 ## Refreshing / re-importing the test set on upgrade
 
 Because nothing is vendored yet, each upgrade **imports fresh from the new baseline** rather than
 merging over an old copy:
-- Flex: re-import `orig/flex/tests` for the new version into `tests/flex/cases` (preserving the
+- Flex: re-import `upstream/flex/tests` for the new version into `tests/flex/cases` (preserving the
   Windows `CMakeLists.txt`/`run_scanner_test.cmake`), and re-verify the suite mechanism against the
   new baseline (newer flex uses different generation machinery — see the note above).
-- Bison: re-import the chosen `orig/bison/tests` `.at` subset for the new version.
+- Bison: re-import the chosen `upstream/bison/tests` `.at` subset for the new version.
 - Always import against the **new** baseline tag, never a branch tip
   ([02](../02-baseline-mirrors/spec.md)).

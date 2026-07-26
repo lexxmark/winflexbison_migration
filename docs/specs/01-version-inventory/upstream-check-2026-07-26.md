@@ -37,18 +37,18 @@ new dated file rather than editing this one, if the question comes up again late
 - Vendored: `v1.4.19` / `445afe00b62d8a7bee109faf3b96edf0c97b7a85` (matches `spec.md`).
 - `ftp.gnu.org/gnu/m4/` lists two newer releases:
 
-  | Version | Released | Tag SHA (`orig/m4`) | gnulib submodule SHA |
+  | Version | Released | Tag SHA (`upstream/m4`) | gnulib submodule SHA |
   |---|---|---|---|
   | 1.4.19 *(vendored)* | 2021-05-28 | `445afe00b62d8a7bee109faf3b96edf0c97b7a85` | `3639c57a970191e0bf7a9789bd1341786d0255a1` |
   | 1.4.20 | 2025-05-10 | `3b138ea2f54bb622dae2ee2a6aca2c4f67b392da` | `9fc42e5f5711e501f80559539a78aed2b7c842ac` |
   | 1.4.21 *(latest)* | 2026-02-06 | `d192fbeeae14a5f75cb1a3e76a3ff78f67e39d40` | `c6842ec25c6d5b1596da4eb6b68603f9578b23e9` |
 
-  (Tags/SHAs recovered by `git -C orig/m4 fetch --tags` then `git rev-parse`/`git ls-tree <tag>
+  (Tags/SHAs recovered by `git -C upstream/m4 fetch --tags` then `git rev-parse`/`git ls-tree <tag>
   gnulib` — the same recipe as `spec.md`'s "how to determine versions for any tree" section.)
 
 ### Why it's worth adopting
 
-From the upstream `NEWS` (`git -C orig/m4 diff v1.4.19..v1.4.21 -- NEWS`):
+From the upstream `NEWS` (`git -C upstream/m4 diff v1.4.19..v1.4.21 -- NEWS`):
 
 - **Two fixes for regressions introduced in 1.4.19 itself** (the version currently vendored):
   - `debugmode(t)`-style trace output could read invalid memory when tracing a series of pushed
@@ -63,7 +63,7 @@ From the upstream `NEWS` (`git -C orig/m4 diff v1.4.19..v1.4.21 -- NEWS`):
 
 ### Why it's not a trivial version bump
 
-`git -C orig/m4 diff --stat v1.4.19..v1.4.21 -- . ':!gnulib' ':!doc' ':!po'` shows 60 files changed
+`git -C upstream/m4 diff --stat v1.4.19..v1.4.21 -- . ':!gnulib' ':!doc' ':!po'` shows 60 files changed
 (+3289/-7727 lines). Most of the deletions are `gl/build-aux/*` being split out to a separate
 `gl-mod` submodule (bootstrap tooling, not runtime code), but the real interpreter sources changed
 substantially too — and per `docs/specs/04-port-change-catalog/spec.md`, **all of these are vendored
@@ -82,7 +82,7 @@ in `builtin.c`. A full patch inventory should be regenerated from the new baseli
 
 - **Flex, Bison:** no action — already at the latest tagged upstream release.
 - **GNU M4:** upgrade to **1.4.21**, following the existing playbook: add the `v1.4.21` baseline
-  under `orig/m4` ([02](../02-baseline-mirrors/spec.md)), regenerate the current port-change catalog
+  under `upstream/m4` ([02](../02-baseline-mirrors/spec.md)), regenerate the current port-change catalog
   from the *old* (1.4.19) baseline to confirm it's current
   ([04](../04-port-change-catalog/spec.md)), then replay per
   [05-upgrade-procedure](../05-upgrade-procedure/spec.md) and validate per

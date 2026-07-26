@@ -17,9 +17,9 @@ Upstream bison/m4 pull gnulib and (for bison) an external m4 via autotools. winf
 
 - `common/misc/` — a gnulib subset + libbison support (bitset, obstack, hash, quotearg, argmatch,
   xalloc, timevar, mbswidth, `bitset/`, `glthread/`, …). Maps to **bison-side gnulib**
-  (`orig/gnulib` @ `7818455…`).
+  (`upstream/gnulib` @ `7818455…`).
 - `common/m4/` — a **complete bundled GNU m4** (`m4.c`, `builtin.c`, `eval.c`, …) with its own
-  gnulib in `common/m4/lib/` — maps to **m4-side gnulib** (`orig/gnulib` @ `3639c57…`). Exists
+  gnulib in `common/m4/lib/` — maps to **m4-side gnulib** (`upstream/gnulib` @ `3639c57…`). Exists
   because bison needs an m4 processor at runtime and it is linked in-process (see category 5).
 
 **Replay:** re-vendor from the new baselines rather than merging line-by-line. Preserve the two
@@ -182,23 +182,23 @@ OUT=$ROOT/docs/specs/04-port-change-catalog/diffs
 mkdir -p "$OUT"
 
 # Flex: vendored vs baseline (exclude committed generated files for the hand-patch view)
-diff -ru "$ROOT/orig/flex/src" "$ROOT/winflexbison/flex/src" \
+diff -ru "$ROOT/upstream/flex/src" "$ROOT/winflexbison/flex/src" \
      -x scan.c -x parse.c -x parse.h -x skel.c > "$OUT/flex-src.patch"
 
 # Bison src: vendored vs baseline (exclude generated + the injected config.h)
-diff -ru "$ROOT/orig/bison/src" "$ROOT/winflexbison/bison/src" \
+diff -ru "$ROOT/upstream/bison/src" "$ROOT/winflexbison/bison/src" \
      -x 'parse-gram.*' -x 'scan-*.c' > "$OUT/bison-src.patch"
 
 # M4: vendored vs baseline
-diff -ru "$ROOT/orig/m4/src" "$ROOT/winflexbison/common/m4" > "$OUT/m4-src.patch"
+diff -ru "$ROOT/upstream/m4/src" "$ROOT/winflexbison/common/m4" > "$OUT/m4-src.patch"
 
 # gnulib (bison-side → common/misc): checkout the bison-pin first
-git -C "$ROOT/orig/gnulib" checkout 7818455627c5e54813ac89924b8b67d0bc869146
-diff -ru "$ROOT/orig/gnulib/lib" "$ROOT/winflexbison/common/misc" > "$OUT/gnulib-misc.patch"
+git -C "$ROOT/upstream/gnulib" checkout 7818455627c5e54813ac89924b8b67d0bc869146
+diff -ru "$ROOT/upstream/gnulib/lib" "$ROOT/winflexbison/common/misc" > "$OUT/gnulib-misc.patch"
 
 # gnulib (m4-side → common/m4/lib): switch to the m4-pin
-git -C "$ROOT/orig/gnulib" checkout 3639c57a970191e0bf7a9789bd1341786d0255a1
-diff -ru "$ROOT/orig/gnulib/lib" "$ROOT/winflexbison/common/m4/lib" > "$OUT/gnulib-m4lib.patch"
+git -C "$ROOT/upstream/gnulib" checkout 3639c57a970191e0bf7a9789bd1341786d0255a1
+diff -ru "$ROOT/upstream/gnulib/lib" "$ROOT/winflexbison/common/m4/lib" > "$OUT/gnulib-m4lib.patch"
 ```
 
 > Path caveats: the vendored trees are re-organized relative to upstream (e.g. bison's `lib/`

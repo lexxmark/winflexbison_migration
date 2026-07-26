@@ -8,17 +8,17 @@ This working directory (`winflexbison_migration/`) contains the project plus sup
 
 - `winflexbison/` — the actual project: a Windows port of Flex and Bison
   (`lexxmark/winflexbison` on GitHub). This is where almost all work happens.
-- `orig/` — pristine upstream **baseline mirrors**, each checked out at the exact tag matching the
-  currently vendored version, used for diffing when porting/upgrading: `orig/flex` (@ `v2.6.4`),
-  `orig/bison` (@ `v3.8.2`, from `akimd/bison`, carries the test suite), `orig/m4` (@ `v1.4.19`),
-  `orig/gnulib` (at the commit pinned by bison's/m4's submodule). Not built, not committed to the
+- `upstream/` — pristine upstream **baseline mirrors**, each checked out at the exact tag matching the
+  currently vendored version, used for diffing when porting/upgrading: `upstream/flex` (@ `v2.6.4`),
+  `upstream/bison` (@ `v3.8.2`, from `akimd/bison`, carries the test suite), `upstream/m4` (@ `v1.4.19`),
+  `upstream/gnulib` (at the commit pinned by bison's/m4's submodule). Not built, not committed to the
   project. See `docs/specs/02-baseline-mirrors/spec.md`.
 - `docs/specs/` — the **upgrade playbook**: a repeatable process for adopting new upstream
   flex/bison/m4 releases (version inventory, baselines, test adoption, the Windows port-change
   catalog, upgrade runbook, validation gate). Start at `docs/specs/README.md`.
 
 Unless told otherwise, assume any task refers to `winflexbison/`. When diffing against
-upstream, use `orig/<component>` as the baseline — not a fresh `master` checkout, which is newer
+upstream, use `upstream/<component>` as the baseline — not a fresh `master` checkout, which is newer
 than the vendored version.
 
 ## Build
@@ -78,7 +78,7 @@ top-level builds) plus an opt-in WSL-driven bison autotest. See
   `cmake -DWFB_WSL_AUTOTEST=ON`. Install its WSL deps once with
   `tests/bison-autotest/install-wsl-deps.sh`.
 
-The upstream test sources live in the baselines under `orig/`; the adapted copies are vendored
+The upstream test sources live in the baselines under `upstream/`; the adapted copies are vendored
 under `tests/`.
 
 ## Architecture
@@ -108,7 +108,7 @@ top-level build via `add_subdirectory`:
 
 When porting a fix from upstream Flex or Bison, the counterpart source usually lives at the same
 relative path under `flex/src/` or `bison/src/` — diff against the version-matched baseline in
-`orig/flex` or `orig/bison` (see `docs/specs/04-port-change-catalog/spec.md` for the diff recipes)
+`upstream/flex` or `upstream/bison` (see `docs/specs/04-port-change-catalog/spec.md` for the diff recipes)
 to see what changed.
 
 Two other top-level pieces are not part of the compiled product:

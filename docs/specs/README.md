@@ -18,7 +18,7 @@ procedure, and a test gate that must be green before merge.
   (`winflexbison/flex/src`, `winflexbison/bison/src`, `winflexbison/common/m4`,
   `winflexbison/common/misc`). This is what actually ships.
 - **Baseline** — a pristine upstream checkout at the **exact tag matching the vendored version**,
-  kept under `orig/`. Diffing vendored-vs-baseline yields the Windows patch set.
+  kept under `upstream/`. Diffing vendored-vs-baseline yields the Windows patch set.
 - **Replay** — re-applying the documented Windows patches on top of a fresh newer upstream tree.
 - **Generated file** — a build product upstream produces at build time (e.g. flex `scan.c` from
   `scan.l`) that winflexbison commits directly so the project builds without flex/bison/sh/m4
@@ -29,7 +29,7 @@ procedure, and a test gate that must be green before merge.
 | # | Spec | Purpose |
 |---|---|---|
 | 01 | [version-inventory](01-version-inventory/spec.md) | What is vendored now, with exact tag→SHA provenance, and how to determine versions for any tree. |
-| 02 | [baseline-mirrors](02-baseline-mirrors/spec.md) | The `orig/` baseline layout, exact repos/tags/SHAs, and how to add the new target version. |
+| 02 | [baseline-mirrors](02-baseline-mirrors/spec.md) | The `upstream/` baseline layout, exact repos/tags/SHAs, and how to add the new target version. |
 | 03 | [test-adoption](03-test-adoption/spec.md) | How the upstream flex/bison test suites work and the Windows CTest design that reuses them. |
 | 04 | [port-change-catalog](04-port-change-catalog/spec.md) | The canonical catalog of Windows port changes to replay, and how to regenerate the diffs. |
 | 05 | [upgrade-procedure](05-upgrade-procedure/spec.md) | The runbook: replay / diff-merge / hybrid, step by step. |
@@ -41,7 +41,7 @@ procedure, and a test gate that must be green before merge.
  pick new upstream version(s)
    │
    ▼
- [02] add new baseline under orig/ (new tag → recover its gnulib submodule SHA)
+ [02] add new baseline under upstream/ (new tag → recover its gnulib submodule SHA)
    │
    ▼
  [04] regenerate current port diffs from the OLD baseline → confirm catalog is current
@@ -72,7 +72,7 @@ procedure, and a test gate that must be green before merge.
 
 ## Scope note
 
-This playbook was authored together with the initial `orig/` baseline setup. Implementing the
+This playbook was authored together with the initial `upstream/` baseline setup. Implementing the
 CTest harness, pre-generating the flex test scanners, adapting the bison test suite, and any actual
 version upgrade are **future work executed by following these specs** — they were intentionally not
 done in the authoring pass.

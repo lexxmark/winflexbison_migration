@@ -22,7 +22,7 @@ Pick per component based on how much upstream moved:
 ## Runbook
 
 ### Step 0 — Prepare baselines
-- Add the new target version(s) under `orig/` and recover their gnulib submodule SHA(s)
+- Add the new target version(s) under `upstream/` and recover their gnulib submodule SHA(s)
   ([02](../02-baseline-mirrors/spec.md) → "Adding the NEW target version").
 - **Regenerate the current port diffs against the OLD baseline**
   ([04](../04-port-change-catalog/spec.md) → "Regenerating the authoritative diffs") and skim them

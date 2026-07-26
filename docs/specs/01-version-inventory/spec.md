@@ -45,9 +45,9 @@ mid-upgrade):
    version string. Recover it from a baseline clone (see [02](../02-baseline-mirrors/spec.md)):
    ```sh
    # bison-side gnulib (authoritative for common/misc):
-   git -C orig/bison ls-tree v3.8.2 gnulib      # → 160000 commit <SHA> gnulib
+   git -C upstream/bison ls-tree v3.8.2 gnulib      # → 160000 commit <SHA> gnulib
    # m4-side gnulib (authoritative for common/m4/lib):
-   git -C orig/m4   ls-tree v1.4.19 gnulib      # → 160000 commit <SHA> gnulib
+   git -C upstream/m4   ls-tree v1.4.19 gnulib      # → 160000 commit <SHA> gnulib
    ```
    The `<SHA>` on the `160000 commit` line is the pinned gnulib commit.
 

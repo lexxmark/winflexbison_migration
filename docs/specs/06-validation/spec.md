@@ -60,7 +60,7 @@ function" or C4020 often signals a missing gnulib shim or a POSIX call needing a
 
 ## 4. Sign-off checklist
 
-- [ ] New baselines added under `orig/` with tag→SHA recorded (incl. both gnulib SHAs)
+- [ ] New baselines added under `upstream/` with tag→SHA recorded (incl. both gnulib SHAs)
       ([01](../01-version-inventory/spec.md), [02](../02-baseline-mirrors/spec.md)).
 - [ ] Port catalog ([04](../04-port-change-catalog/spec.md)) re-verified against regenerated diffs;
       any new port hunks added to the catalog.
