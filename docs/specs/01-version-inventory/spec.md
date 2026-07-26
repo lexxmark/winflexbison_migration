@@ -57,3 +57,13 @@ mid-upgrade):
 inventory table above (and to `changelog.md`) capturing component → version → tag → resolved SHA,
 including both gnulib SHAs recovered via the submodule trick. Version numbers alone have already
 proven insufficient (they could not pin gnulib at all).
+
+## Upstream check log
+
+Dated, point-in-time snapshots comparing this inventory against the latest upstream releases (run
+whenever it's worth asking "do we need to update?"). Add a new dated file rather than editing an
+old one.
+
+- [upstream-check-2026-07-26.md](upstream-check-2026-07-26.md) — Flex/Bison confirmed at latest
+  upstream release; GNU M4 found two releases behind (1.4.19 → 1.4.21), upgrade recommended but not
+  started.
