@@ -108,6 +108,27 @@ Very few, **flex only** (bison proper has **zero** inline ifdefs):
 
 **Replay:** these are self-contained; re-apply verbatim to the same functions in the new flex.
 
+### 6a. Bison line-ending / binary I/O *(hand-maintained — upgrade-fragile)*
+
+Bison has its own Windows binary-mode handling, **not** `#ifdef`-guarded, and history shows it is
+easily lost when bison is re-vendored. Keep these on every upgrade:
+
+- `bison/src/main.c` — stdout/stderr set to `_O_BINARY` **only when `WINFLEXBISON_BINARY_OUTPUT=Y`**
+  (env-var gated, commit `be28ee7`; default stays text so console CRLF is unchanged).
+- `bison/src/files.c` `xfopen` — **force binary for write/append modes** so generated output
+  (parser `.c`/`.h`, `.output` report, `.dot` graph, skeleton output) is LF like upstream. Reads
+  stay text so CRLF **input** grammars have their `\r` stripped (`scan-gram.c` reads via `xfopen
+  "r"`). Centralized here (not per-call-site) *specifically* because the original per-file `"wb"`
+  patches (`a32e862`, in `scan-skel.c`/`print.c`/`print-graph.c`) were **silently lost** in the
+  3.8.2 re-vendor — a central chokepoint survives future re-vendors. On POSIX `text == binary`.
+- `bison/src/location.c` `caret_set_file` — open the quoted source file **binary** (`"rb"`), not
+  text: the caret code smashes `\r\n` itself and relies on true `ftell`/`fseek` byte offsets; text
+  mode desyncs them, producing garbled/empty caret source-line echoes.
+
+**Replay:** after re-vendoring bison, grep the new tree for `xfopen`, `_setmode`, and
+`caret_set_file`/`fopen (caret` and re-apply. The `tests/bison-autotest` suite catches regressions
+of all three (diagnostic caret tests, and any test comparing a generated file).
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
