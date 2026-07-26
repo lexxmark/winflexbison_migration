@@ -62,13 +62,24 @@ just run the CMake configure/build/package sequence above.
 
 ## Testing
 
-There is no automated test suite wired into the build — `CMakeLists.txt` does not call
-`enable_testing()`/`add_test()`, so `ctest` has nothing to run, and no tests are vendored in the
-project. Verifying a change to `win_flex` or `win_bison` today means manually generating output
-from a `.l`/`.y` file with the built executable, then compiling/running the generated C to confirm
-correctness. The upstream test suites (flex's exit-code tests, bison's autotest `.at` files) live
-in the baselines under `orig/`; `docs/specs/03-test-adoption/spec.md` designs how to import them
-and run them under CTest.
+The project has a CTest suite (wired via `enable_testing()` + `add_subdirectory(tests)` for
+top-level builds) plus an opt-in WSL-driven bison autotest. See
+`docs/specs/03-test-adoption/spec.md` for the full design.
+
+- **Windows CTest gate — `runtests.bat`** (configure + build Release + `ctest`), **no WSL**:
+  - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (~112 exit-code/comparison tests;
+    scanners generated with `win_flex --wincompat`, compiled with MSVC, run).
+  - `tests/bison/` — a self-contained compile-run parser plus golden-diff diagnostics (win_bison vs
+    golden captured from the reference bison; regenerate with `tests/bison/generate.sh` under WSL).
+  - `tests/winflexbison/` — **our own** port-specific tests (e.g. parallel-invocation resistance,
+    verifying per-process temp files don't collide and don't leak).
+- **Full bison GNU Autotest — `tests/bison-autotest/`** (696 groups), a POSIX-shell harness run
+  under **WSL** against `win_bison.exe`: `runtests.bat --with-autotest`, or as a ctest test with
+  `cmake -DWFB_WSL_AUTOTEST=ON`. Install its WSL deps once with
+  `tests/bison-autotest/install-wsl-deps.sh`.
+
+The upstream test sources live in the baselines under `orig/`; the adapted copies are vendored
+under `tests/`.
 
 ## Architecture
 

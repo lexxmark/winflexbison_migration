@@ -124,17 +124,44 @@ easily lost when bison is re-vendored. Keep these on every upgrade:
 - `bison/src/location.c` `caret_set_file` — open the quoted source file **binary** (`"rb"`), not
   text: the caret code smashes `\r\n` itself and relies on true `ftell`/`fseek` byte offsets; text
   mode desyncs them, producing garbled/empty caret source-line echoes.
+- `common/m4/builtin.c` `m4_syscmd` — the port emulates bison's `b4_cat` (`syscmd([cat <<'_m4eof'
+  …])`) since there is no shell; it must **strip the here-doc delimiter lines**, else `_m4eof`
+  leaks into generated code and diagnostics. (This trimming had regressed in the m4 1.4.19 upgrade.)
 
-**Replay:** after re-vendoring bison, grep the new tree for `xfopen`, `_setmode`, and
-`caret_set_file`/`fopen (caret` and re-apply. The `tests/bison-autotest` suite catches regressions
-of all three (diagnostic caret tests, and any test comparing a generated file).
+**Replay:** after re-vendoring bison, grep the new tree for `xfopen`, `_setmode`,
+`caret_set_file`/`fopen (caret`, and `cat <<` and re-apply. The `tests/bison-autotest` suite catches
+regressions of all of these (diagnostic caret tests, `%define`/skeleton error tests, and any test
+comparing a generated file).
+
+### 6b. Temp-file handling *(hand-maintained)*
+
+Both tools replace the Unix `fork`+`pipe` filter/m4 machinery with real temp files in `%TEMP%`
+(there is no `fork`; MSVC has no `fmemopen`, and `tmpfile()` writes to the drive root and fails
+without admin). Keep:
+
+- `common/misc/pid_tempname.c` — temp names include `_getpid()` so **concurrent** win_flex/win_bison
+  invocations get unique names (the documented race the port fixes). Honors `FLEX_TMP_DIR`/`TEMP`.
+- **Delete-on-close** (MSVC `"D"` fopen flag) for the intermediate temp files, so they are removed
+  when the handle closes — including on crash/kill — with no manual tracking:
+  `flex/src/filter.c` `mkstempFILE`, `flex/src/main.c` `flex_temp_out_main` (`freopen … "w+D"`),
+  `bison/src/output.c` `m4_in`/`m4_out` (`"wb+D"`). Each is used only via its `FILE*` handle, never
+  reopened by name, so delete-on-close is safe. The old explicit `unlinktemp()`/`_unlink` paths were
+  dropped (they only ran on clean exit and leaked otherwise).
+- `bison/src/fixits.c` — `--fixit` `remove(backup)` before `rename(input, backup)`: MSVC `rename`
+  fails if the target exists (POSIX overwrites), so a re-run reported "cannot backup".
+
+**Replay:** small, self-contained; grep the new trees for `mkstempFILE`, `pid_tempname`, `"wb+"`
+around `m4_in`/`m4_out`, and `rename` in `fixits.c`. `tests/winflexbison` (parallel resistance)
+guards the concurrency + no-leak behavior.
 
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
 - Root: `-D_CRT_SECURE_NO_WARNINGS`, `-Dinline=__inline` (ucrt C-mode bug), `-Drestrict=__restrict`
   (VS2017), `__extension__=` (MSVC-only, not clang-cl), `-D_DEBUG` (Debug),
-  `/source-charset:utf-8`, optional `/MD`→`/MT` (`USE_STATIC_RUNTIME`).
+  `/utf-8` (both source **and** execution charset UTF-8 — the execution charset matters so bison's
+  UTF-8 glyph literals, e.g. the item dot in `.output`/graphs, stay UTF-8 rather than being
+  transcoded to the system codepage), optional `/MD`→`/MT` (`USE_STATIC_RUNTIME`).
 - Subdirs: `-D_LIB` (common), `-D_CONSOLE` (both exes), link `kernel32.lib user32.lib`,
   `C_STANDARD 90` for common.
 

@@ -274,27 +274,29 @@ Full suite (flex + bison) is **117/117 green** under VS2022 x64 Release.
 The WSL side (`generate.sh` + reference bison 3.8.2) is proven. Growing `golden-cases/` (more
 `input`/`conflicts`/`output`/`report` grammars) is incremental.
 
-### Status — B2 faithful autotest bootstrapped (`tests/bison-autotest/`)
+### Status — B2 faithful autotest complete (`tests/bison-autotest/`)
 
-The full upstream suite is now wired as an opt-in WSL runner (the path to *all* bison tests):
+The full upstream suite runs under WSL against `win_bison.exe`, driven by `run.sh`:
 
-- `at/` vendors the version-matched `.at` sources (29 files + `testsuite.h`) plus a hand-authored
-  `package.m4`; `run.sh` compiles them with `autom4te` into the **776-group** `testsuite` and runs
-  it under WSL against `win_bison.exe`. The 18 MB generated `testsuite` is produced on demand, not
-  committed. `.gitattributes` (`eol=lf`) keeps the WSL-consumed files correct under autocrlf.
-- A **normalizing `bison` wrapper** rewrites the program name (`win_bison.exe → bison`; win_bison
-  does not strip `.exe` as GNU tools do) and strips CR before the harness compares — the same
-  cosmetic fixes as the golden-diff launcher. `atconfig`/`atlocal` are hand-authored;
-  `CC`/`CXX`/`DC`/`CONF_JAVAC` empty ⇒ compile/Java/D tiers auto-skip.
+- `at/` vendors the version-matched `.at` sources (29 files + `testsuite.h`) + a hand-authored
+  `package.m4`; `run.sh` compiles them with `autom4te` into the **776-group** `testsuite` (produced
+  on demand, not committed). `install-wsl-deps.sh` installs the WSL prerequisites.
+- The `bison` wrapper is a plain `exec` — no post-processing — because it forwards
+  `BISON_PROGRAM_NAME=bison` and `WINFLEXBISON_BINARY_OUTPUT=Y` (plus the env the tests set:
+  `COLUMNS`, `YYFLAT`, `POSIXLY_CORRECT`, …) to the Windows process via `WSLENV`. `atconfig`/`atlocal`
+  are hand-authored; `run.sh` auto-detects `gcc`/`g++` to enable the C/C++ tiers (`GREP`/`EGREP`/
+  `PERL`/… defined; `CPPFLAGS=-I` for `testsuite.h`). `@tb@` (a test token = literal TAB) is
+  substituted in the generated `testsuite`.
 
-**Baseline (toolchain-free tier, no compilers):** the harness drives win_bison over all 776 groups;
-of the ~212–227 non-skipped groups the program-name/CRLF normalization took failures from **200 →
-136**. Remaining failures are being triaged for the next systematic causes (path separators; a few
-genuine port behaviours). This is inherently iterative, tracked step by step against the committed
-harness. Enabling the C tier needs `gcc` in WSL (`build-essential`).
+**Result: 696 groups run, 0 unexpected failures, ~80 skipped** (Java + D only, no `javac`/D compiler).
+A handful of environment/limitation cases are documented xfails (NTFS-illegal filenames; a couple of
+win_bison m4 skeleton-complaint and byte-escaping diffs). Getting here surfaced and fixed **five real
+win_bison bugs** (caret binary read, `xfopen` binary output, `b4_cat` `_m4eof` leak, `/utf-8`
+glyphs, `--fixit` backup) — all cataloged in [04](../04-port-change-catalog/spec.md).
 
-**Runner split recap:** the Windows `ctest` gate stays dependency-free (flex 112 + bison
-compile-run/golden). The faithful 776-test autotest is the deeper, WSL-only coverage engine.
+**Runner split:** the Windows `ctest` gate stays dependency-free; the 696-test autotest is the
+deeper, WSL-only engine. It can also be driven from Windows: `runtests.bat --with-autotest`, or as
+one aggregate ctest test with `cmake -DWFB_WSL_AUTOTEST=ON` (the `bison.autotest.wsl` test).
 
 ## Windows design — our own tests (author, don't import)
 
@@ -304,7 +306,13 @@ likely to regress across an upgrade or an MSVC change, and upstream has no test 
 upstream doesn't have them. We therefore also need a **native winflexbison test set that we
 author and own**, separate from the imported suites (e.g. under `tests/winflexbison/`).
 
-Areas to cover (future execution — this pass only records the intent):
+**Started (`tests/winflexbison/`):** a self-verifying **parallel-invocation resistance** test
+(`run_parallel.ps1`) — N concurrent win_flex/win_bison over the same grammar, sharing `%TEMP%`, must
+all produce output identical to a single-call reference, actually overlap (measured peak concurrency,
+else fail), and leave no temp files behind. This guards the port's per-process-unique temp names
+(`pid_tempname`) and delete-on-close temp files.
+
+Areas still to cover:
 - **Port-specific behavior** catalogued in [04](../04-port-change-catalog/spec.md): the
   `app_path`/relocatable data-dir lookup (`win_bison` finding its `data/` skeletons next to the
   exe), `config.h` substitutions, the `filter.c`/`output.c` Windows patches, and the flex
