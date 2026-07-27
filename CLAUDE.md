@@ -62,14 +62,14 @@ sitting there goes into the release zip — including artifacts left over from e
 Test executables are therefore redirected to `<build tree>/tests/bin/` by `tests/CMakeLists.txt`;
 any new target that isn't part of the product needs the same treatment.
 
-CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2022 (x64) and VS2026 (x64+Win32)
-with MSVC, and GitHub Actions (`.github/workflows/os_windows.yaml`) builds with `clang-cl` via
-Ninja. AppVeyor additionally runs the CTest gate, but **only in the VS2022/x64/Release cell** —
-every other job echoes a `[ctest] skipped` line — and packages in `after_test` so a failing test
-produces no zip. GitHub Actions only configures/builds/packages.
+CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2022 and VS2019, each x64+Win32
+(8 jobs, no matrix exclusions), and GitHub Actions (`.github/workflows/os_windows.yaml`) builds
+with `clang-cl` via Ninja. AppVeyor additionally runs the CTest gate, but **only in the
+VS2022/x64/Release cell** — every other job echoes a `[ctest] skipped` line — and packages in
+`after_test` so a failing test produces no zip. GitHub Actions only configures/builds/packages.
 
-Win32 coverage comes solely from the VS2026 rows; adding a Win32 exclusion for VS2026 would
-silently stop 32-bit builds and artifacts.
+VS2026 is not in the matrix: the worker image exists and ships MSBuild 18.7.8, but its CMake
+(4.1.2) has no `Visual Studio 18 2026` generator, so those jobs fail at configure.
 
 ## Testing
 

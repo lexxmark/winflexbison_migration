@@ -14,7 +14,7 @@ cmake --preset x64-Release   && cmake --build --preset x64-Release
 cmake --preset x64-Debug     && cmake --build --preset x64-Debug
 ```
 
-CI parity (must also pass): AppVeyor builds VS2022 (x64) and VS2026 (x64/Win32) with MSVC and
+CI parity (must also pass): AppVeyor builds VS2022 and VS2019, each x64/Win32, with MSVC and
 `USE_STATIC_RUNTIME=ON`, and runs the **CTest gate in the VS2022/x64/Release cell**; GitHub
 Actions builds `clang-cl` via Ninja (`.github/workflows/os_windows.yaml`) without tests. A local
 green build is necessary but not sufficient — the `__extension__=` define is
