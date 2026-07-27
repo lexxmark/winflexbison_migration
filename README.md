@@ -46,7 +46,10 @@ git submodule update --init winflexbison
 ```
 
 The `upstream/` mirrors clone shallow (`shallow = true` in `.gitmodules`) — only the tree at each
-pinned commit, which is all a diff needs. All four together take about 20 seconds and ~70 MB.
+pinned commit, which is all a diff needs. Measured: all four in ~45 s for ~175 MB, versus ~55 s
+and ~205 MB unshallow. gnulib dominates either way; its tree alone is 63 MB, so shallow trims the
+history, not the bulk.
+
 If you need tags or history in one of them — `git describe`, `ls-tree <tag>`, or diffing two
 upstream releases — undo it for that mirror only:
 
