@@ -1,4 +1,4 @@
-# winflexbison-migration
+# winflexbison_migration
 
 A working area for maintaining and upgrading [**winflexbison**][wfb] — the Windows port of GNU
 Flex and Bison — not the port itself.
@@ -14,7 +14,7 @@ upstream checkouts to diff against, and a written playbook for the upgrade.
 ## Layout
 
 ```
-winflexbison-migration/
+winflexbison_migration/
 ├─ winflexbison/   the port itself (submodule -> lexxmark/winflexbison)
 ├─ upstream/       pristine upstream mirrors, pinned to the vendored versions (submodules)
 │  ├─ flex/        westes/flex
@@ -34,7 +34,7 @@ repository records a URL and a commit per baseline, never the clones' contents.
 The submodules are the whole point, so clone recursively:
 
 ```sh
-git clone --recurse-submodules <url> winflexbison-migration
+git clone --recurse-submodules <url> winflexbison_migration
 ```
 
 Already cloned without them? Everything will look empty until:

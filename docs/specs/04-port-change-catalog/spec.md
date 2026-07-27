@@ -177,7 +177,9 @@ The diffs ARE the catalog's ground truth. Regenerate them from the baselines
 (`04-port-change-catalog/diffs/`) so an upgrade can see exactly what must survive.
 
 ```sh
-ROOT=C:/Users/azhon/source/repos/winflexbison_migration
+# run from the workspace checkout, but NOT from inside a submodule --
+# --show-toplevel would then resolve to the submodule instead of the workspace
+ROOT=$(git rev-parse --show-toplevel)
 OUT=$ROOT/docs/specs/04-port-change-catalog/diffs
 mkdir -p "$OUT"
 

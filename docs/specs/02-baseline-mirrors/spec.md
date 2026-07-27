@@ -8,7 +8,7 @@ versions, so the Windows patch set can be extracted by diffing vendored-vs-basel
 Baselines live at the **workspace root**, outside the winflexbison git repo:
 
 ```
-C:\Users\azhon\source\repos\winflexbison_migration\   ← workspace repo
+winflexbison_migration\   ← workspace repo (this checkout)
 ├─ winflexbison\   ← the project (submodule)
 ├─ docs\specs\     ← this playbook
 └─ upstream\       ← baseline mirrors (submodules; no content in the project's history)
@@ -41,7 +41,7 @@ autotest suite that the canonical release tarball layout keeps (see
 ## How these were created (reproducible commands)
 
 ```sh
-cd C:/Users/azhon/source/repos/winflexbison_migration
+cd <workspace-root>          # the winflexbison_migration checkout
 mkdir -p upstream && cd upstream
 
 # flex / bison / m4 — shallow clone at the exact tag
