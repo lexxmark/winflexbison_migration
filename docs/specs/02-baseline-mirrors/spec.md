@@ -75,6 +75,17 @@ git -C upstream/m4    describe --tags   # v1.4.19
 git -C upstream/gnulib rev-parse HEAD   # 7818455627c5e54813ac89924b8b67d0bc869146
 ```
 
+> **These need tags, which a default clone does not have.** The mirrors are `shallow = true` in
+> `.gitmodules`, so `submodule update --init` fetches the pinned commit alone — `describe --tags`
+> then fails with *"No names found"* even though the checkout is correct. `rev-parse HEAD` still
+> works and is sufficient to confirm the pin. To use the tag-based commands (here, and the
+> `ls-tree <tag>` recipe in [01](../01-version-inventory/spec.md), and any release-to-release
+> `diff`), deepen just the mirror you need:
+>
+> ```sh
+> git -C upstream/m4 fetch --unshallow --tags     # ~4s for m4
+> ```
+
 **Spot-check the version, not just the tag.** The pitfall this guards against: a clone left on a
 branch tip is the *wrong* tree. For example, a `westes/flex` clone at `master` is ~589 commits past
 `v2.6.4` and contains `src/skeletons.c`, `src/c99-flex.skl`, `src/cpp-flex.skl` — files that do not

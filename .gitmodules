@@ -1,15 +1,26 @@
+# The upstream/* mirrors are read-only reference material -- only the tree at
+# the pinned commit matters, never their history -- so they default to shallow
+# (depth 1). Recipes that need tags or history (git describe, ls-tree <tag>,
+# diff between releases) require `git fetch --unshallow --tags` first; see
+# docs/specs/02-baseline-mirrors/spec.md.
+#
+# winflexbison is deliberately NOT shallow: it is the working repo.
 [submodule "upstream/flex"]
 	path = upstream/flex
 	url = https://github.com/westes/flex.git
+	shallow = true
 [submodule "upstream/bison"]
 	path = upstream/bison
 	url = https://github.com/akimd/bison.git
+	shallow = true
 [submodule "upstream/m4"]
 	path = upstream/m4
 	url = https://git.savannah.gnu.org/git/m4.git
+	shallow = true
 [submodule "upstream/gnulib"]
 	path = upstream/gnulib
 	url = https://git.savannah.gnu.org/git/gnulib.git
+	shallow = true
 [submodule "winflexbison"]
 	path = winflexbison
 	url = https://github.com/lexxmark/winflexbison.git

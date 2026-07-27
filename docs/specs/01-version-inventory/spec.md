@@ -44,6 +44,10 @@ mid-upgrade):
    submodule**, so the exact snapshot a release used is recorded by that release's tree, not by any
    version string. Recover it from a baseline clone (see [02](../02-baseline-mirrors/spec.md)):
    ```sh
+   # the mirrors clone shallow, so fetch tags before using them by name:
+   git -C upstream/bison fetch --unshallow --tags
+   git -C upstream/m4    fetch --unshallow --tags
+
    # bison-side gnulib (authoritative for common/misc):
    git -C upstream/bison ls-tree v3.8.2 gnulib      # → 160000 commit <SHA> gnulib
    # m4-side gnulib (authoritative for common/m4/lib):

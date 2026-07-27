@@ -29,19 +29,36 @@ sources against the matching `upstream/` baseline. That is why the baselines are
 *vendored* versions rather than tracking upstream `master`, and why they are submodules: the
 repository records a URL and a commit per baseline, never the clones' contents.
 
+Because only the tree at each pinned commit matters, the baselines clone shallow by default.
+
 ## Getting it
 
-The submodules are the whole point, so clone recursively:
-
 ```sh
-git clone --recurse-submodules <url> winflexbison_migration
+git clone <url> winflexbison_migration
+cd winflexbison_migration
+git submodule update --init            # top level only -- see the warning below
 ```
 
-Already cloned without them? Everything will look empty until:
+To build the port and nothing else, one submodule is enough:
 
 ```sh
-git submodule update --init
+git submodule update --init winflexbison
 ```
+
+The `upstream/` mirrors clone shallow (`shallow = true` in `.gitmodules`) — only the tree at each
+pinned commit, which is all a diff needs. All four together take about 20 seconds and ~70 MB.
+If you need tags or history in one of them — `git describe`, `ls-tree <tag>`, or diffing two
+upstream releases — undo it for that mirror only:
+
+```sh
+git -C upstream/m4 fetch --unshallow --tags
+```
+
+> **Do not use `git clone --recurse-submodules` here.** It is equivalent to
+> `git submodule update --init --recursive`, and `upstream/bison` carries submodules of its own
+> (`gnulib`, `submodules/autoconf`). Recursing pulls those too — far more than this workspace
+> needs, and on Windows the nested `.git/modules/…` paths can blow past the 260-character limit
+> and fail the clone outright. Plain `--init`, as above, stops at the top level.
 
 ## Pinned baselines
 
