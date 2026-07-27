@@ -14,10 +14,16 @@ cmake --preset x64-Release   && cmake --build --preset x64-Release
 cmake --preset x64-Debug     && cmake --build --preset x64-Debug
 ```
 
-CI parity (must also pass): AppVeyor builds VS2017/2019/2022 × x64/Win32 (MSVC,
-`USE_STATIC_RUNTIME=ON`); GitHub Actions builds `clang-cl` via Ninja
-(`.github/workflows/os_windows.yaml`). A local green build is necessary but not sufficient — the
-`__extension__=` define is MSVC-only-not-clang, so clang-cl can break where MSVC passes.
+CI parity (must also pass): AppVeyor builds VS2022 (x64) and VS2026 (x64/Win32) with MSVC and
+`USE_STATIC_RUNTIME=ON`, and runs the **CTest gate in the VS2022/x64/Release cell**; GitHub
+Actions builds `clang-cl` via Ninja (`.github/workflows/os_windows.yaml`) without tests. A local
+green build is necessary but not sufficient — the `__extension__=` define is
+MSVC-only-not-clang, so clang-cl can break where MSVC passes.
+
+Note that CI's cell is *not* the same configuration as `runtests.bat`: AppVeyor passes
+`USE_STATIC_RUNTIME=ON`, which registers the extra `winflexbison.static_runtime_no_vcruntime`
+test (132 tests rather than 131). To reproduce the CI gate exactly, configure locally with
+`-DUSE_STATIC_RUNTIME=ON` and run ctest against that build tree.
 
 Artifacts to confirm exist after a Release build:
 - `winflexbison/bin/Release/win_flex.exe`, `win_bison.exe` (+ `data/`)
@@ -67,7 +73,8 @@ function" or C4020 often signals a missing gnulib shim or a POSIX call needing a
 - [ ] All hand-maintained patches (categories 3–6) replayed and present in the new tree.
 - [ ] Committed generated files regenerated from the new upstream.
 - [ ] `changelog.md` + version stamps updated; `CMakeLists.txt` version bumped if releasing.
-- [ ] Build green: VS2022 Release+Debug locally; CI (AppVeyor MSVC matrix + clang-cl) green.
+- [ ] Build green: VS2022 Release+Debug locally; CI (AppVeyor MSVC matrix + clang-cl) green —
+      including AppVeyor's CTest run in the VS2022/x64/Release cell.
 - [ ] Warning list diffed against the baseline (§2); no unexplained new warnings.
 - [ ] `--version` smoke test shows the new versions.
 - [ ] Flex CTest suite green; bison test subset green; skips documented.
