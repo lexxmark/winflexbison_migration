@@ -74,20 +74,26 @@ VS2026 is not in the matrix: the worker image exists and ships MSBuild 18.7.8, b
 ## Testing
 
 The project has a CTest suite (wired via `enable_testing()` + `add_subdirectory(tests)` for
-top-level builds) plus an opt-in WSL-driven bison autotest. See
+top-level builds) plus an opt-in MSYS2-driven bison autotest. See
 `docs/specs/03-test-adoption/spec.md` for the full design.
 
-- **Windows CTest gate — `runtests.bat`** (configure + build Release + `ctest`), **no WSL**:
+- **Windows CTest gate — `runtests.bat`** (configure + build Release + `ctest`), no MSYS2 needed:
   - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (~112 exit-code/comparison tests;
     scanners generated with `win_flex --wincompat`, compiled with MSVC, run).
   - `tests/bison/` — a self-contained compile-run parser plus golden-diff diagnostics (win_bison vs
-    golden captured from the reference bison; regenerate with `tests/bison/generate.sh` under WSL).
+    golden captured from the reference bison; regenerate with `tests/bison/generate.sh` under MSYS2,
+    whose `bison` package is 3.8.2, matching the vendored version).
   - `tests/winflexbison/` — **our own** port-specific tests (e.g. parallel-invocation resistance,
     verifying per-process temp files don't collide and don't leak).
-- **Full bison GNU Autotest — `tests/bison-autotest/`** (696 groups), a POSIX-shell harness run
-  under **WSL** against `win_bison.exe`: `runtests.bat --with-autotest`, or as a ctest test with
-  `cmake -DWFB_WSL_AUTOTEST=ON`. Install its WSL deps once with
-  `tests/bison-autotest/install-wsl-deps.sh`.
+- **Full bison GNU Autotest — `tests/bison-autotest/`** (776 groups), a POSIX-shell harness run
+  under **MSYS2** against `win_bison.exe`: `runtests.bat --with-autotest`, or as a ctest test with
+  `cmake -DWFB_MSYS2_AUTOTEST=ON`. Install its deps once with
+  `tests/bison-autotest/install-msys2-deps.sh`.
+
+MSYS2 runs `win_bison.exe` as an ordinary child process, so nothing needs env-var forwarding or
+path translation. One trap: autotest splits `$PATH` on `:`, so a Windows-style entry
+(`C:\msys64\...`) tears in half and hides every program in it. Set `PATH` in cmd before launching
+bash, or use `/c/...` form inside it.
 
 The upstream test sources live in the baselines under `upstream/`; the adapted copies are vendored
 under `tests/`.

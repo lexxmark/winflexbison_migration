@@ -247,14 +247,14 @@ the faithful upstream autotest is an optional deeper check.
 ### Status — bison harness bootstrapped (B1 + golden-diff proof)
 
 `winflexbison/tests/bison/` now implements the hybrid, with the everyday Windows run staying
-CTest-native and WSL-free:
+CTest-native and free of any POSIX layer:
 
 - **compile-run (exit-code, MSVC)** — `cases/calc.y` is a self-contained calculator (integrated
   scanner + `main`); `win_bison` generates the parser, MSVC compiles it, the exe runs with input on
   stdin, pass == exit 0 (`run_parser_test.cmake`). Proves win_bison end-to-end on Windows.
 - **golden-diff (Windows-native)** — `win_bison` runs on each `golden-cases/*.y` and its
   stdout/stderr/exit are compared against `golden/` captured from **reference bison 3.8.2**
-  (`run_bison_test.cmake`). Golden is regenerated under WSL by `generate.sh` and committed; a
+  (`run_bison_test.cmake`). Golden is regenerated under MSYS2 by `generate.sh` and committed; a
   checkout without golden simply registers no golden tests.
 - **Portability tricks that made golden stable:** invoke by bare filename from the cases dir (stable
   `name.y:line` paths); normalize the actual output for Windows-isms — `CRLF→LF`,
@@ -271,32 +271,64 @@ re-read/echo the grammar line on Windows).
 
 Full suite (flex + bison) is **117/117 green** under VS2022 x64 Release.
 
-The WSL side (`generate.sh` + reference bison 3.8.2) is proven. Growing `golden-cases/` (more
-`input`/`conflicts`/`output`/`report` grammars) is incremental.
+The reference side (`generate.sh` + reference bison 3.8.2, from MSYS2's `bison` package) is proven.
+Growing `golden-cases/` (more `input`/`conflicts`/`output`/`report` grammars) is incremental.
 
 ### Status — B2 faithful autotest complete (`tests/bison-autotest/`)
 
-The full upstream suite runs under WSL against `win_bison.exe`, driven by `run.sh`:
+The full upstream suite runs under MSYS2 against `win_bison.exe`, driven by `run.sh`:
 
 - `at/` vendors the version-matched `.at` sources (29 files + `testsuite.h`) + a hand-authored
-  `package.m4`; `run.sh` compiles them with `autom4te` into the **776-group** `testsuite` (produced
-  on demand, not committed). `install-wsl-deps.sh` installs the WSL prerequisites.
-- The `bison` wrapper is a plain `exec` — no post-processing — because it forwards
-  `BISON_PROGRAM_NAME=bison` and `WINFLEXBISON_BINARY_OUTPUT=Y` (plus the env the tests set:
-  `COLUMNS`, `YYFLAT`, `POSIXLY_CORRECT`, …) to the Windows process via `WSLENV`. `atconfig`/`atlocal`
-  are hand-authored; `run.sh` auto-detects `gcc`/`g++` to enable the C/C++ tiers (`GREP`/`EGREP`/
-  `PERL`/… defined; `CPPFLAGS=-I` for `testsuite.h`). `@tb@` (a test token = literal TAB) is
-  substituted in the generated `testsuite`.
+  `package.m4`; `run.sh` compiles them with `autom4te-2.71` into the **776-group** `testsuite`
+  (produced on demand, not committed). `install-msys2-deps.sh` installs the prerequisites.
+- The `bison` wrapper is a plain `exec` — no post-processing, and no forwarding machinery: MSYS2
+  runs `win_bison.exe` as an ordinary child, so `BISON_PROGRAM_NAME=bison` and
+  `WINFLEXBISON_BINARY_OUTPUT=Y` (plus the env the tests set: `COLUMNS`, `YYFLAT`,
+  `POSIXLY_CORRECT`, …) are simply inherited. `atconfig`/`atlocal` are hand-authored; `run.sh`
+  auto-detects `gcc`/`g++` to enable the C/C++ tiers (`GREP`/`EGREP`/`PERL`/… defined;
+  `CPPFLAGS=-I` for `testsuite.h`, plus `-include` of an `alarm()` no-op that mingw lacks and
+  `calc.at`'s driver requires). `@tb@` (a test token = literal TAB) is substituted in the
+  generated `testsuite`.
 
-**Result: 696 groups run, 0 unexpected failures, ~80 skipped** (Java + D only, no `javac`/D compiler).
-A handful of environment/limitation cases are documented xfails (NTFS-illegal filenames; a couple of
-win_bison m4 skeleton-complaint and byte-escaping diffs). Getting here surfaced and fixed **five real
-win_bison bugs** (caret binary read, `xfopen` binary output, `b4_cat` `_m4eof` leak, `/utf-8`
-glyphs, `--fixit` backup) — all cataloged in [04](../04-port-change-catalog/spec.md).
+**Result: 776 groups — 694 ok, 12 documented xfails, 70 skipped, 0 unexpected failures** (skips are
+Java + D, plus the NTFS-illegal-filename cases autotest now skips honestly). Getting here surfaced
+and fixed **six real win_bison bugs** (caret binary read, `xfopen` binary output, `b4_cat` `_m4eof`
+leak, `/utf-8` glyphs, `--fixit` backup, `/dev/null` → `NUL` in `xfopen`) — all cataloged in
+[04](../04-port-change-catalog/spec.md).
 
-**Runner split:** the Windows `ctest` gate stays dependency-free; the 696-test autotest is the
-deeper, WSL-only engine. It can also be driven from Windows: `runtests.bat --with-autotest`, or as
-one aggregate ctest test with `cmake -DWFB_WSL_AUTOTEST=ON` (the `bison.autotest.wsl` test).
+**Runner split:** the Windows `ctest` gate stays dependency-free; the 776-group autotest is the
+deeper, MSYS2-only engine. It can also be driven from Windows: `runtests.bat --with-autotest`, or as
+one aggregate ctest test with `cmake -DWFB_MSYS2_AUTOTEST=ON` (the `bison.autotest.msys2` test).
+
+**Why MSYS2 rather than WSL.** The harness originally ran under WSL. MSYS2 replaced it because it is
+simpler and easier to pin: no `WSLENV` forwarding list, no `binfmt_misc` WSLInterop entry to repair
+mid-run, no constraint that the work dir be visible to both sides, and the toolchain (`autom4te`,
+`gcc`, reference `bison` 3.8.2) comes from one package manager that can pin versions — which matters
+because `autom4te`'s version changes the generated testsuite's group numbering.
+
+The switch was validated by running the full 776 groups under **both** hosts and diffing verdicts
+group by group, which is the only way the following showed up. Coverage moved in three directions:
+
+- 129 and 283–287 (NTFS-illegal filenames) *failed* under WSL — the Linux side creates files Windows
+  cannot open — and are now honest skips.
+- 149/150/152/154 were skipped under WSL for want of locales and now run, exposing genuine win_bison
+  caret-geometry and CR-handling differences (xfailed, with causes recorded in the runner).
+- 59 `glr2.cc` groups silently *skipped* under MSYS2 at first. `run.sh`'s C++-standard probe linked
+  its test program with `-o /dev/null`, which mingw's linker cannot write, so every
+  `CXX*_CXXFLAGS` came out empty and the C++11-gated glr2.cc tests dropped out looking like normal
+  "no compiler" behaviour. Fixed by probing to a temp file.
+
+Recovering those 59 groups immediately paid for itself: group **764** (`glr-regression.at`, glr2.cc)
+now fails on a libstdc++ assertion inside the *generated* parser —
+`vector<bool>::operator[]` with `__n >= size()`. That is a real out-of-bounds access in **upstream
+bison 3.8.2's glr2.cc skeleton**, and it was happening under WSL too, silently: Ubuntu's g++ builds
+without `_GLIBCXX_ASSERTIONS`, MSYS2's enables them by default. It is xfailed with that explanation
+rather than papered over by disabling assertions — the detection is coverage the WSL runner never
+had, and the bug is worth reporting upstream.
+
+**Note the pattern:** two of the defects this migration surfaced — the `xfopen` fix and the probe —
+are the same assumption that `/dev/null` is a writable file. On this port it is not; `NUL` is. Worth
+checking first whenever a Windows-side tool "silently does nothing".
 
 ## Windows design — our own tests (author, don't import)
 

@@ -127,11 +127,23 @@ easily lost when bison is re-vendored. Keep these on every upgrade:
 - `common/m4/builtin.c` `m4_syscmd` — the port emulates bison's `b4_cat` (`syscmd([cat <<'_m4eof'
   …])`) since there is no shell; it must **strip the here-doc delimiter lines**, else `_m4eof`
   leaks into generated code and diagnostics. (This trimming had regressed in the m4 1.4.19 upgrade.)
+- `bison/src/files.c` `xfopen` — map **`"/dev/null"` → `"NUL"`**. The MSVC CRT has no `/dev/null`,
+  and `scan-skel.c` redirects skeleton output there whenever complaints have been issued
+  (`xfopen (complaint_status ? "/dev/null" : *out_namep, "w")`). Without the mapping *every*
+  diagnostic-producing run dies with `bison: /dev/null: cannot open` appended to its stderr —
+  24 of the first 25 autotest failures traced to this one line. `compute_output_file_names` in the
+  same file already performed the substitution for `--output`, so this was a gap, not a decision.
 
 **Replay:** after re-vendoring bison, grep the new tree for `xfopen`, `_setmode`,
-`caret_set_file`/`fopen (caret`, and `cat <<` and re-apply. The `tests/bison-autotest` suite catches
-regressions of all of these (diagnostic caret tests, `%define`/skeleton error tests, and any test
-comparing a generated file).
+`caret_set_file`/`fopen (caret`, `cat <<`, and `/dev/null`, and re-apply. The `tests/bison-autotest`
+suite catches regressions of all of these (diagnostic caret tests, `%define`/skeleton error tests,
+and any test comparing a generated file).
+
+**Class of defect worth naming: `/dev/null` is not a writable file on this port.** It has bitten
+twice — the `xfopen` entry above, and `tests/bison-autotest/run.sh`'s C++-standard probe, which
+linked to `-o /dev/null` and therefore reported every `-std=` flag as unsupported, silently skipping
+59 `glr2.cc` test groups. Both failed quietly rather than loudly. When a Windows-side tool "does
+nothing" for no visible reason, check this first.
 
 ### 6b. Temp-file handling *(hand-maintained)*
 
