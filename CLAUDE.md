@@ -141,7 +141,11 @@ root `CMakeLists.txt`. Bump it there and add a matching entry at the top of `cha
 cutting a release. Per `README.md`: 2.4.x package versions bundle Bison 2.7, 2.5.x bundle Bison
 3.x.
 
-## Commit messages
+## Committing
 
-Keep them short: a concise summary line, and at most a couple of body lines only when the *why*
-isn't obvious. Don't restate the diff or write long explanations.
+**Never run `git commit` or `git push` unless explicitly told to.** Make the edits, then stop and
+report what changed and what the commit would say; wait for "commit this" / "push". This covers
+the parent repo's submodule-pointer bumps as well as `winflexbison/` itself.
+
+Commit messages: keep them short — a concise summary line, and at most a couple of body lines
+only when the *why* isn't obvious. Don't restate the diff or write long explanations.
