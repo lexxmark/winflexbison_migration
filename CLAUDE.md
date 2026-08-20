@@ -62,11 +62,15 @@ sitting there goes into the release zip — including artifacts left over from e
 Test executables are therefore redirected to `<build tree>/tests/bin/` by `tests/CMakeLists.txt`;
 any new target that isn't part of the product needs the same treatment.
 
-CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2022 and VS2019, each x64+Win32
-(8 jobs, no matrix exclusions), and GitHub Actions (`.github/workflows/os_windows.yaml`) builds
-with `clang-cl` via Ninja. AppVeyor additionally runs the CTest gate, but **only in the
-VS2022/x64/Release cell** — every other job echoes a `[ctest] skipped` line — and packages in
-`after_test` so a failing test produces no zip. GitHub Actions only configures/builds/packages.
+CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2022 and VS2019, each
+Release+Debug × x64+Win32 (8 build jobs), plus a 9th `WFB_JOB=autotest` job that runs the bison
+GNU Autotest instead of building the matrix cell — `matrix.exclude` keeps it to VS2022/x64/Release,
+and `matrix.allow_failures` makes it non-gating, so it goes red against a green build rather than
+hiding its exit code. GitHub Actions (`.github/workflows/os_windows.yaml`) builds with `clang-cl`
+via Ninja. AppVeyor runs the CTest gate in **every build cell** (~19s each; the test executables
+are built there anyway) and skips it in the autotest job; packaging happens in `after_test` — also
+skipped in the autotest job — so a failing test produces no zip. GitHub Actions only
+configures/builds/packages.
 
 VS2026 is not in the matrix: the worker image exists and ships MSBuild 18.7.8, but its CMake
 (4.1.2) has no `Visual Studio 18 2026` generator, so those jobs fail at configure.
@@ -78,7 +82,7 @@ top-level builds) plus an opt-in MSYS2-driven bison autotest. See
 `docs/specs/03-test-adoption/spec.md` for the full design.
 
 - **Windows CTest gate — `runtests.bat`** (configure + build Release + `ctest`), no MSYS2 needed:
-  - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (~112 exit-code/comparison tests;
+  - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (116 exit-code/comparison tests;
     scanners generated with `win_flex --wincompat`, compiled with MSVC, run).
   - `tests/bison/` — a self-contained compile-run parser plus golden-diff diagnostics (win_bison vs
     golden captured from the reference bison; regenerate with `tests/bison/generate.sh` under MSYS2,
@@ -140,6 +144,12 @@ The project version is set once, in the `project(winflexbison VERSION x.y.z ...)
 root `CMakeLists.txt`. Bump it there and add a matching entry at the top of `changelog.md` when
 cutting a release. Per `README.md`: 2.4.x package versions bundle Bison 2.7, 2.5.x bundle Bison
 3.x.
+
+## Issues
+
+Fixed issues are labelled `done` and left **open**; they are closed only once the release carrying
+the fix ships. So an open `done` issue means "fixed on `dev`, not yet released" — don't close it
+early, and don't read it as still-outstanding work.
 
 ## Committing
 
