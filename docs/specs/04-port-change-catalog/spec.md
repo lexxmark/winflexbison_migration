@@ -166,6 +166,36 @@ without admin). Keep:
 around `m4_in`/`m4_out`, and `rename` in `fixits.c`. `tests/winflexbison` (parallel resistance)
 guards the concurrency + no-leak behavior.
 
+### 6c. Bison skeleton divergences (`bison/data/`) *(hand-maintained — upgrade-fragile)*
+
+`bison/data/` is data, not code: it is copied next to the exe and read at run time, so upgrades
+tend to replace it wholesale and a patch here disappears without a compiler ever noticing. Until
+2.5.26 the tree was byte-identical to upstream apart from `m4sugar/`. Now one patch lives here:
+
+- `bison/data/skeletons/c.m4`, `b4_sizes_types_define` — an `_MSC_VER` branch in the `YYPTRDIFF_T`
+  width ladder (#95). Upstream's ladder asks for `__PTRDIFF_TYPE__` (GCC/Clang), then `PTRDIFF_MAX`
+  (`<stdint.h>`, which the skeleton includes only when `__STDC_VERSION__ >= 199901`), then falls
+  back to `long`. MSVC publishes neither, and reports `__STDC_VERSION__` only under `/std:c11` or
+  later, so every generated parser landed on `long` — 32 bits on 64-bit Windows, where `ptrdiff_t`
+  is 64 — and every x64 build warned C4244 on `YYPTRDIFF_T yysize = yyssp - yyss + 1`. The branch
+  takes `ptrdiff_t` from `<stddef.h>` and picks the maximum by `_WIN64`.
+
+  **Do not "simplify" this by including `<stdint.h>` for MSVC instead** — the obvious fix, and it
+  breaks the flex+bison combination: a generated flex scanner defines `INT8_MIN`, `INT32_MAX` and
+  friends itself, and MSVC's `<stdint.h>` redefines them unguarded, so C4005 kills any translation
+  unit holding both. `tests/flex` `core_yylex_wrapper` catches it; that is how it was found.
+
+**Replay:** after re-vendoring `bison/data/`, grep the new `c.m4` for `_MSC_VER` — one hit in
+`b4_sizes_types_define` — and re-apply. `bison.ptrdiff_width` in the CTest suite fails (loudly, on
+x64) if it is lost. This is also an upstreaming candidate (#106): upstream master still has the
+unguarded ladder.
+
+**Build-dependency note:** a skeleton edit does not rebuild `win_bison`, so nothing in the build
+graph used to connect it to the parsers the tests generate — an incremental build after a skeleton
+change quietly recompiled the previous run's output. `tests/CMakeLists.txt` now globs
+`bison/data/*` into `WFB_BISON_SKELETONS` and every `win_bison` custom command lists it in
+`DEPENDS`. A newly *added* skeleton file still needs a cmake re-run.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
@@ -202,6 +232,9 @@ diff -ru "$ROOT/upstream/flex/src" "$ROOT/winflexbison/flex/src" \
 # Bison src: vendored vs baseline (exclude generated + the injected config.h)
 diff -ru "$ROOT/upstream/bison/src" "$ROOT/winflexbison/bison/src" \
      -x 'parse-gram.*' -x 'scan-*.c' > "$OUT/bison-src.patch"
+
+# Bison data: skeletons and m4sugar the exe reads at run time (category 6c)
+diff -ru "$ROOT/upstream/bison/data" "$ROOT/winflexbison/bison/data" > "$OUT/bison-data.patch"
 
 # M4: vendored vs baseline
 diff -ru "$ROOT/upstream/m4/src" "$ROOT/winflexbison/common/m4" > "$OUT/m4-src.patch"

@@ -86,7 +86,7 @@ Both #97 and #100 are still marked OPEN on GitHub despite having their closing c
 
 | Issue | What | Notes |
 |---|---|---|
-| #95 | `YYPTRDIFF_T` not 64-bit compatible | Verified: `bison/data/skeletons/c.m4:296-311` is byte-identical to upstream 3.8.2. MSVC defines neither `__PTRDIFF_TYPE__` nor `PTRDIFF_MAX` (absent `<stdint.h>`), so it lands on the `long` fallback and every x64 build gets C4244. Fix is an MSVC/`_WIN64` branch in `c.m4`. **Caveat:** a deliberate divergence from an upstream skeleton — interacts with the autotest goldens and with #106. |
+| #95 | `YYPTRDIFF_T` not 64-bit compatible | **DONE (2026-08-23), on `dev` in the working tree.** `_MSC_VER` branch in `b4_sizes_types_define` taking `ptrdiff_t` from `<stddef.h>`, maximum by `_WIN64`. Reproduced (C4244 at x64 in C and C++ mode, clean under `/std:c11`) and verified both directions through the harness: `bison.ptrdiff_width` is the only failing test on the pre-fix skeleton. First divergence in `bison/data/` — catalogued as 6c in `docs/specs/04-port-change-catalog/`, and an upstreaming candidate for #106 (upstream master still has the unguarded ladder). Do **not** re-do it by including `<stdint.h>`: that redefines the integer limits a generated flex scanner declares, and C4005 kills any TU holding both. |
 | #73 | C4244 in `LexerInput` | `return yyin.gcount()` — `std::streamsize` to `int`. One cast in `FlexLexer.h`. Same family as #95, and cheap. |
 | #96 | Typo in repo metadata | Not a code change. A minute. |
 
