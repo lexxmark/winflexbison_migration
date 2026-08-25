@@ -196,6 +196,27 @@ change quietly recompiled the previous run's output. `tests/CMakeLists.txt` now 
 `bison/data/*` into `WFB_BISON_SKELETONS` and every `win_bison` custom command lists it in
 `DEPENDS`. A newly *added* skeleton file still needs a cmake re-run.
 
+### 6d. Flex skeleton divergence (`flex/src/flex.skl`) *(backport — retires on the next flex upgrade)*
+
+One line, and it is a **backport of an upstream fix that postdates 2.6.4**, not a Windows-only
+patch:
+
+- `flex.skl`, `yyFlexLexer::LexerInput` — `return (int)yyin.gcount();` instead of
+  `return yyin.gcount();` (#73). `gcount()` returns `std::streamsize`, 64-bit under MSVC x64, so
+  returning it as `int` warns C4244 at the project's own `/W3` in every generated C++ scanner. The
+  `read()` above it is bounded by `max_size`, an `int`, so the value always fits. Upstream flex
+  fixed it the same way in `b198864a` (2021-06-22, now `src/cpp-flex.skl` after upstream split the
+  skeleton), so a re-vendor of any flex newer than 2.6.4 brings it in and this entry can be dropped.
+
+**Pairing:** the skeleton is compiled into `flex/src/skel.c` (category 2), and win_flex reads the
+embedded copy, not `flex.skl` — so an edit to `flex.skl` alone changes nothing. Both files carry the
+line and must move together: `flex.skl:1533` and `skel.c:1974`.
+
+**Replay:** after re-vendoring flex, grep the new skeleton for `gcount` — if it already reads
+`(int)yyin.gcount();`, nothing to do. `flex.cxx_batch_lexer_input` in the CTest suite fails if it is
+lost. Note the affected line only exists in the non-interactive branch of `LexerInput`, and flex
+generates interactive scanners by default — the test therefore regenerates `cxx_basic.ll` with `-B`.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):

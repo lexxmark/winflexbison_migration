@@ -87,7 +87,7 @@ Both #97 and #100 are still marked OPEN on GitHub despite having their closing c
 | Issue | What | Notes |
 |---|---|---|
 | #95 | `YYPTRDIFF_T` not 64-bit compatible | **DONE (2026-08-23), on `dev` in the working tree.** `_MSC_VER` branch in `b4_sizes_types_define` taking `ptrdiff_t` from `<stddef.h>`, maximum by `_WIN64`. Reproduced (C4244 at x64 in C and C++ mode, clean under `/std:c11`) and verified both directions through the harness: `bison.ptrdiff_width` is the only failing test on the pre-fix skeleton. First divergence in `bison/data/` — catalogued as 6c in `docs/specs/04-port-change-catalog/`, and an upstreaming candidate for #106 (upstream master still has the unguarded ladder). Do **not** re-do it by including `<stdint.h>`: that redefines the integer limits a generated flex scanner declares, and C4005 kills any TU holding both. |
-| #73 | C4244 in `LexerInput` | `return yyin.gcount()` — `std::streamsize` to `int`. One cast in `FlexLexer.h`. Same family as #95, and cheap. |
+| #73 | C4244 in `LexerInput` | **DONE (2026-08-24), on `dev` in the working tree.** `return (int)yyin.gcount();` — the same one-line cast upstream flex made in `b198864a` (2021-06-22), so a future flex re-vendor keeps it. Lives in the *skeleton*, not `FlexLexer.h`: `flex/src/flex.skl:1533` plus its compiled-in copy `flex/src/skel.c:1974`, which is the one win_flex actually reads. Only the non-interactive branch of `LexerInput` has the line and flex generates interactive scanners by default, so the test `flex.cxx_batch_lexer_input` regenerates `cxx_basic.ll` with `-B` and compiles it with `/we4244`; verified failing pre-fix. Catalogued as 6d. |
 | #96 | Typo in repo metadata | Not a code change. A minute. |
 
 ### Needs discussion
