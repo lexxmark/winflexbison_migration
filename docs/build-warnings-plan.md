@@ -1,0 +1,330 @@
+# Build Warnings — Review and Cleanup Plan
+
+## Purpose
+
+Get the MSVC build to zero warnings without turning the vendored flex/bison/m4/gnulib sources
+into a merge-conflict field at the next upstream upgrade.
+
+Status of this document: **in progress**, config-first order (4 → 5 → 1 → 2 → 3 → 6).
+
+| Phase | State |
+|---|---|
+| 4 — vendored target suppression | **done**, `c3a75a4`. x64 302 → 112, Win32 → 96, ctest 137/137 |
+| 5 — test target configuration | in progress; `C4005` reopened as a product bug, see below |
+| 1, 2, 3, 6 | not started |
+
+## Where the numbers come from
+
+AppVeyor build 21 (`94ea54db`, "bison: make YYPTRDIFF_T pointer-wide on MSVC (#95)"), all 9 jobs
+green. The 8 build cells were downloaded and de-duplicated; no local build was run, so these are
+exactly what CI emits today.
+
+| Cell | warning lines |
+|---|---|
+| VS2022 / x64 / Release | 291 |
+| VS2022 / x64 / Debug | 291 |
+| VS2022 / Win32 / Release | 171 |
+| VS2022 / Win32 / Debug | 171 |
+| VS2019 cells | same within ±6 |
+
+x64 and Win32 differ by design: `C4267` (size_t → smaller) only fires on LLP64, and `C4018`
+(signed/unsigned compare) fires ~3× more on Win32, where `size_t` is 32-bit and therefore
+comparable with `int` in more places. **Both must be checked** — a change that silences x64 can
+leave Win32 untouched, and vice versa.
+
+Compilation happens at `/W3` (CMake's MSVC default for C; explicitly set for C++ in the root
+`CMakeLists.txt`). No `/wd` suppression exists anywhere in the tree today.
+
+## What the build actually emits
+
+VS2022 / x64 / Release, by warning code, with the owning target:
+
+| Code | x64 | Win32 | Meaning | Where it lives |
+|---|---:|---:|---|---|
+| C4267 | 122 | 0 | `size_t` → `int`/`symbol_number`/… | `win_bison` 79, `winflexbison_common` 42 |
+| C4005 | 45 | 45 | macro redefinition (`INT8_MIN`…) | 4 C++ flex **test** targets |
+| C4244 | 38 | 17 | `__int64`/`long`/`ptrdiff_t` → narrower | `win_bison` 27, `winflexbison_common` 11 |
+| C4018 | 19 | 58 | signed/unsigned mismatch | `winflexbison_common` 17/31, `win_bison` 2/27 |
+| D9025 | 16 | 16 | `/Uinline` overriding `/Dinline=__inline` | 8 **test** targets |
+| C4311 | 14 | 0 | `void *` → `long` truncation | `flextest_mem_r`, `flextest_mem_nr` |
+| C4065 | 13 | 13 | `switch` with `default` but no `case` | `bisontest_many_tokens` (generated) |
+| C4308 | 5 | 5 | negative constant → unsigned | `win_bison` 2, `winflexbison_common` 3 |
+| C4146 | 5 | 5 | unary minus on unsigned | `winflexbison_common` |
+| C4090 | 5 | 5 | different `const` qualifiers | `win_bison` 3, `win_flex` 2 |
+| *(bison)* | 4 | 4 | `%pure-parser` deprecated, "fix-its can be applied" | 4 flex test grammars |
+| C4477 | 2 | 0 | `printf` format vs argument type | `win_bison` (`lalr.c:152`) |
+| C4307 | 2 | 2 | signed integral constant overflow | `win_bison` |
+| C4116 | 1 | 1 | unnamed type definition in parentheses | `winflexbison_common` (`obstack.c`) |
+
+By target, x64 Release, counting distinct file:line sites rather than lines:
+
+| Target | sites | Nature |
+|---|---:|---|
+| `win_bison` | 117 | vendored bison + a handful of port-added lines |
+| `winflexbison_common` | 79 | vendored gnulib / GNU m4 — **all** upstream |
+| `win_flex` | 2 | **both** port-added lines |
+| test targets | 30 + D9025 | ours to configure |
+
+Two facts that shape the whole plan:
+
+1. **~177 of 198 product warnings are `C4267`/`C4244`/`C4018` in vendored code.** These are MSVC's
+   equivalents of `-Wconversion` and `-Wsign-compare`, which GCC does *not* enable at `-Wall`.
+   Upstream builds clean and has never seen them. Fixing them in place means editing roughly 120
+   lines across 60 vendored files — every one of those lines becomes a conflict when we adopt the
+   next flex/bison/m4 release. That is precisely the cost this project exists to avoid.
+2. **20 of them are not even locatable.** `bison/src/scan-gram.c` and `scan-code.c` are
+   pre-generated flex output carrying `#line` directives that point at
+   `/Users/akim/src/gnu/bison/src/scan-gram.l` — the maintainer's laptop. MSVC reports the warning
+   against that path. There is no file to annotate; only target-level or wrapper-level suppression
+   can reach them.
+
+## The rule
+
+Every fix lands in the highest tier it can:
+
+1. **Build system** (`CMakeLists.txt`) — zero upstream diff. Default for anything in vendored code.
+2. **Port-owned code** — lines this port added (`pid_tempname` glue, `main_m4`, our test CMake).
+   Fix properly; these are ours.
+3. **Vendored upstream source** — only where the warning marks a *real* Windows-specific defect,
+   and then as a minimal change recorded in `docs/specs/04-port-change-catalog/` and reported
+   upstream.
+
+Tier 1 is a deliberate trade: we lose `/W3` coverage over vendored code in exchange for a clean
+diff. Phase 6 buys the coverage back as an on-demand audit rather than a permanent wall of noise.
+
+---
+
+## Phase 1 — Stop generating our own noise (D9025, 16 lines)
+
+**Not upstream's fault, ours.** The root `CMakeLists.txt` does
+
+```cmake
+add_definitions(-Dinline=__inline)
+add_definitions(-Drestrict=__restrict)
+```
+
+globally, because MSVC compiles C as C89 and the vendored C sources use both keywords. In C++
+those macros are illegal (they collide with `<xkeycheck.h>` and `__declspec(restrict)`), so five
+places in `tests/` undo them with `/Uinline /Urestrict` — and `cl` warns about each override, in
+every C++ test target, twice.
+
+Fix: make the definitions apply to C only, so nothing has to be undone.
+
+```cmake
+add_compile_definitions(
+    $<$<COMPILE_LANGUAGE:C>:inline=__inline>
+    $<$<COMPILE_LANGUAGE:C>:restrict=__restrict>)
+```
+
+then delete `/Uinline /Urestrict` from `tests/bison/CMakeLists.txt:138`,
+`tests/flex/CMakeLists.txt:239`, `:308`, `:506` (keeping `/we4244` at `:308`), and update the
+comments that explain the workaround.
+
+**Caveat to verify before committing:** `$<COMPILE_LANGUAGE:...>` in `add_compile_definitions`
+needs CMake ≥ 3.11 and, for the Visual Studio generator, only works because C and C++ never share
+a `.vcxproj` here. If it misbehaves, the fallback is an `INTERFACE` target carrying the two
+definitions, linked by the product targets and the C test targets. Either way this must be proven
+on a real VS2022 *and* VS2019 configure, not reasoned about.
+
+Removes: 16 lines per cell, and one long-standing wart.
+
+## Phase 2 — Fix the port-owned defects (C4090 ×5, C4477 ×2)
+
+Small, genuinely wrong, and all in code this port added.
+
+**C4090 — `flex/src/filter.c:78` and `bison/src/output.c:817,835`.** `pid_tempname()` returns
+`const char *`; the port assigns it to `char *p`. Change the three locals to `const char *`.
+No upstream line moves — `pid_tempname` and both call sites are port additions.
+
+**C4090 — `flex/src/filter.c:485` and `bison/src/output.c:842`.** `char const *argv[10]` passed to
+`main_m4 (int argc, char *const *argv, …)`. `main_m4`'s signature is upstream m4's `main`
+signature, so change the *call*, not the callee: `main_m4 (i - 1, (char *const *) argv, …)`.
+
+**C4477 — `bison/src/lalr.c:152`.** This one is a real bug, not a nit:
+
+```c
+fprintf (stderr, "goto_map[%d (%s)] = %ld .. %ld\n",
+         i, symbols[ntokens + i]->tag, goto_map[i], goto_map[i+1] - 1);
+```
+
+`goto_number` is `size_t` (`lalr.h:80`, identical upstream). On LP64 Linux `%ld` and `size_t` are
+both 64-bit, so upstream never noticed; on MSVC x64 `%ld` reads 32 bits of a 64-bit vararg and
+every subsequent conversion in the call is misaligned. Only reachable via
+`--trace=automaton`, so the blast radius is trace output — but it is wrong output.
+
+Fix: `%zu` for both. Two characters, in vendored code, so it is a Tier-3 change: record it in the
+port-change catalog and send it upstream — bison would want this fix on any LLP64 target.
+
+## Phase 3 — Use upstream's own suppression hook (C4307 ×2, C4308 ×2, some C4018)
+
+`bison/src/system.h:85-94` defines `IGNORE_TYPE_LIMITS_BEGIN` / `_END` — upstream's marker for
+"the overflow-check macros below intentionally compare against type limits, do not warn". It has a
+GCC arm and an empty `#else`, so on MSVC the regions are unmarked and gnulib's `INT_ADD_WRAPV` /
+`INT_MULTIPLY_WRAPV` expansions warn: `strversion.c:39,49,50,61`, `InadequacyList.c:38`,
+`symtab.c:1083`.
+
+Add the MSVC arm upstream left open:
+
+```c
+# elif defined _MSC_VER
+#  define IGNORE_TYPE_LIMITS_BEGIN \
+     __pragma (warning (push)) \
+     __pragma (warning (disable : 4307 4308 4018 4146))
+#  define IGNORE_TYPE_LIMITS_END __pragma (warning (pop))
+```
+
+~6 lines, in one file, at the exact spot upstream designed for it, silencing only the regions
+upstream itself marked as intentional. This is the highest-value Tier-3 change in the plan and is
+worth offering upstream verbatim.
+
+Remaining `C4308`/`C4146` sites (`common/m4/freeze.c:312`, `eval.c:726,812`, `builtin.c:465`,
+`m4/lib/malloc/dynarray_resize.c:45`, `misc/reallocarray.c:31`) sit outside any marked region and
+fall to Phase 4.
+
+## Phase 4 — Suppress the vendored mass at target level (C4267, C4244, C4018, C4146, C4308, C4116)
+
+Add to the root `CMakeLists.txt`, applied to the three vendored targets only:
+
+```cmake
+# Vendored upstream (flex, bison, GNU m4, gnulib) is written for GCC, where none
+# of these fire at -Wall. Silencing them per target keeps ~180 warnings out of the
+# log without touching a single upstream line -- see docs/build-warnings-plan.md.
+#   C4018  signed/unsigned mismatch          C4146  unary minus on unsigned
+#   C4244  narrowing conversion              C4267  size_t -> smaller (x64 only)
+#   C4308  negative constant -> unsigned     C4116  unnamed type in parentheses
+set(WFB_VENDORED_WARNINGS /wd4018 /wd4146 /wd4244 /wd4267 /wd4308 /wd4116)
+```
+
+applied via `target_compile_options(<t> PRIVATE ${WFB_VENDORED_WARNINGS})` on
+`winflexbison_common`, `win_flex`, `win_bison` (and `fl`, `y` for consistency).
+
+Deliberately **not** applied to `tests/winflexbison/` — that is our own code and stays at full
+`/W3`, so new port work still gets checked.
+
+Two alternatives were considered and rejected:
+
+- *Per-file `#pragma warning(disable)`* — reaches ~60 vendored files, i.e. 60 conflict points.
+- *`#pragma` in the `scan-*-c.c` wrappers* — attractive for the 20 `/Users/akim/…` warnings, since
+  those wrappers are three lines each, but they exist upstream too, and it only covers 20 of 180.
+
+Keep `/wd4090` **out** of the list: after Phase 2 there are no `C4090` left, and leaving it live
+means the next port change that drops a `const` gets caught.
+
+## Phase 5 — Configure the test targets (C4005, C4065, C4311, bison deprecations)
+
+All 30 remaining warnings come from test targets, and all four causes are ours to configure.
+
+**C4005 ×54 — not test noise. This is issue #29, closed but never fixed.**
+
+The first draft of this plan called for `/wd4005` on the C++ test targets. That was wrong. In a
+generated C++ scanner:
+
+```
+line  56:  #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L   <- false in C++
+line  81:  #define INT8_MIN (-128)          ... and 8 more
+line 118:  #include <iostream>              -> pulls <stdint.h> -> 9x C4005
+```
+
+MSVC never defines `__STDC_VERSION__` in C++ mode, so the non-C99 branch always runs. **Every
+downstream user compiling a flex C++ scanner with MSVC gets these 9 warnings** — `flextest_cxx_basic`
+is doing nothing unusual, it is the ordinary `win_flex -+` path. The macros reach generated
+scanners because `flex.skl:234` does `m4preproc_include(\`flexint.h')`, which bakes the whole
+header into `skel.c`.
+
+The existing `flex.flexint_h_stdint` test pins `/we4005`, but only on a **C** scanner, where no
+`<stdint.h>` ever follows — so it passes trivially and never covered the C++ path.
+
+Upstream fixed this after 2.6.4: `westes/flex` master splits the typedefs into a new
+`src/flexint_shared.h` (with an explicit `_MSC_VER >= 1600` arm) and leaves the limit macros only
+in `flexint.h`, which the skeleton no longer includes — `src/Makefile.am` confirms the skeleton now
+depends on `flexint_shared.h`. Generated scanners stop defining the macros at all. Note PR #309 is
+*closed, not merged*; the change landed separately.
+
+**Decision: backport that structure.** New `flex/src/flexint_shared.h`, `flexint.h` reduced to
+limit macros plus an include of it, `flex.skl` including the shared header, `skel.c` regenerated,
+plus a C++ regression test that pins `/we4005` the way the C one does, and a changelog entry.
+This is a product fix, not a warnings cleanup — it closes #29 and matches what 2.6.5 will ship, so
+the next flex upgrade is a no-op here rather than a conflict.
+
+**C4065 ×13.** `many_tokens.cc/.hh`, generated by `win_bison` from our own grammar; the skeleton
+emits `switch` blocks with only a `default:`. Add `/wd4065` to `bisontest_many_tokens`.
+
+**C4311 ×14.** `tests/flex/cases/mem_nr.l` and `mem_r.l` print pointers as `(long)ptrs[i].p`. It is
+a genuine 64-bit truncation, but only in the test's own diagnostic printf, and both files are
+vendored verbatim from `upstream/flex/tests/`. **Decided: `/wd4311` on the two targets, sources
+left untouched**, so `diff upstream/flex/tests` stays empty and the build is quiet. Note it in the
+test README.
+
+**4 bison deprecation lines.** `tests/flex/cases/bison_{nr,yylloc,yylval}_parser.y` use
+`%pure-parser`; `win_bison` warns and then adds "fix-its can be applied. Rerun with `--update`".
+Three of the four are vendored from upstream flex's test suite, so do not run `--update` on them —
+pass `-Wno-deprecated -Wno-other` to `win_bison` in those test rules instead. (Our own
+`core_yylex_wrapper_parser.y` may simply be updated.)
+
+## Phase 6 — Keep the signal, then hold the line
+
+Suppression without a way back is how real 64-bit bugs get buried — #95 was exactly that class of
+bug. Two cheap counterweights:
+
+- **An audit switch.** `option(WFB_VENDOR_WARNINGS "Re-enable warnings in vendored code" OFF)`
+  that empties `WFB_VENDORED_WARNINGS`. One configure flag regenerates the full 291-line log for
+  a periodic read, and it costs nothing when off.
+- **`/WX` where we own the code.** Once the tree is clean, `tests/winflexbison/` and any future
+  port-owned target can carry `/WX` so port code cannot regress. Do **not** put `/WX` on the
+  vendored targets — one new upstream warning would then break the build on upgrade day.
+
+Optional follow-up, not part of this plan: the GitHub Actions clang-cl workflow has been failing at
+*configure* since before this work (`Windows-Clang.cmake:187` under CMake 4.4), so there is no
+clang-cl warning data at all. Every number above is MSVC-only. `/wd` flags are accepted by
+clang-cl, so the plan does not need splitting, but clang-cl's own diagnostics are an unknown until
+that job is repaired.
+
+---
+
+## Expected end state
+
+Against the **local** baseline (302 x64 / 182 Win32), which is 11 higher than CI's 291/171 because
+commit `77978ed` added the `flextest_cxx_batch` target and every new C++ test target arrives
+carrying 9 × `C4005` + 2 × `D9025`:
+
+| Phase | x64 removed | Win32 removed |
+|---|---:|---:|
+| 4 — vendored target suppression ✅ | 190 | 86 |
+| 5 — test config + the `C4005` product fix | 85 | 71 |
+| 1 — scope the C-only defines | 18 | 18 |
+| 2 — port-owned defects | 7 | 5 |
+| 3 — `IGNORE_TYPE_LIMITS` MSVC arm | 2 | 2 |
+| **Total** | **302 → 0** | **182 → 0** |
+
+Phase 3 dropped from 4 to 2 because Phase 4's `/wd4308` already covers the two `strversion.c`
+sites; only the two `C4307` remain, which is most of the argument for skipping Phase 3 entirely.
+
+Upstream/vendored files touched: `flex/src/flexint.h`, a new `flex/src/flexint_shared.h`,
+`flex/src/flex.skl` and the regenerated `skel.c` (the #29 fix, tracking upstream's own shape);
+`bison/src/lalr.c` (one `%ld` → `%zu`); optionally one block in `bison/src/system.h`. Everything
+else is CMake or port-owned code.
+
+## Verification
+
+1. Configure and build all four VS2022 cells (x64/Win32 × Release/Debug) plus VS2019/x64/Release,
+   capture the logs, and assert `grep -c " warning "` is 0. x64 and Win32 must both be checked.
+2. `runtests.bat` stays green — Phase 1 changes how *every* test target is compiled, and Phase 2
+   changes the temp-file path in both tools, so the CTest gate is the real proof, not the build.
+3. Diff `flex/src`, `bison/src`, `common/` against `upstream/` and confirm the only new hunks are
+   the two named in "Expected end state".
+4. Re-run with `-DWFB_VENDOR_WARNINGS=ON` once and keep that log as the baseline the audit is
+   compared against later.
+
+## Open decisions
+
+1. **Phase 3 scope.** Now worth only 2 warnings (`C4307`), since Phase 4's `/wd4308` already covers
+   the rest. It is proposed because it is *correct* — it marks intent where upstream marks intent —
+   not because it is necessary. Drop it if the preference is zero discretionary upstream edits;
+   `/wd4307` on `win_bison` gets the same log for no upstream diff.
+2. ~~**`C4311` in the flex mem tests.**~~ Decided: suppress, sources untouched.
+3. **Does the #29 fix belong in this work or its own?** It is now the largest item in Phase 5 and
+   it is a product change with its own test and changelog entry, not a warnings cleanup. Landing it
+   as a separate commit (or separate branch) keeps the warnings work reviewable.
+4. **Release gating.** Does this go into 2.5.26, or after it? Phase 4 changes no shipped behavior,
+   but the #29 fix changes what every generated scanner contains — that is a release-note item,
+   and it argues for 2.5.26 rather than after.
