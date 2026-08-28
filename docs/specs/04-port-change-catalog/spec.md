@@ -217,11 +217,42 @@ line and must move together: `flex.skl:1533` and `skel.c:1974`.
 lost. Note the affected line only exists in the non-interactive branch of `LexerInput`, and flex
 generates interactive scanners by default — the test therefore regenerates `cxx_basic.ll` with `-B`.
 
+### 6e. Bison `lalr.c` trace format *(bug fix — send upstream)*
+
+One line. Not a Windows workaround: it is wrong on any LLP64 target, upstream included.
+
+- `bison/src/lalr.c:152` — `"goto_map[%d (%s)] = %zu .. %zu\n"` instead of `%ld .. %ld`.
+  `goto_number` is `size_t` (`lalr.h:80`, same upstream). On LP64 Linux `%ld` and `size_t` are
+  both 64-bit, so upstream never saw a problem. On MSVC x64 `long` is 32-bit, so `%ld` cuts each
+  value down to 32 bits. MSVC reports it as C4477.
+
+**How bad it is: not very.** Measured, not assumed. The MSVC x64 varargs slot is 8 bytes and
+`%ld` consumes the whole slot, so the later arguments on the line are **not** shifted — only the
+printed value itself is truncated. It takes a value above 2^32 to show, i.e. more than 4 billion
+gotos. So this is a correctness fix and a C4477 fix, not a visible-bug fix.
+
+**One visible difference from upstream.** `goto_map[i+1] - 1` underflows to `SIZE_MAX` when the
+range is empty, which happens for the first nonterminal. `%ld` printed that as `-1`; `%zu` prints
+`18446744073709551615`. Both show the same bits. Upstream on Linux still prints `-1`, so our trace
+output differs there.
+
+Only reached with `--trace=automaton`, so it affects developer trace output and nothing else.
+
+**Replay:** after re-vendoring bison, check whether the line still says `%ld`. If upstream has
+taken the fix, drop this entry. Nothing in the test suite covers it — the trace output is not
+compared anywhere.
+
+**Upstream:** worth reporting; the fix applies to any LLP64 target, not just this port. Mention
+the `-1` → `SIZE_MAX` display change, since upstream may prefer to keep the old display.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
-- Root: `-D_CRT_SECURE_NO_WARNINGS`, `-Dinline=__inline` (ucrt C-mode bug), `-Drestrict=__restrict`
-  (VS2017), `__extension__=` (MSVC-only, not clang-cl), `-D_DEBUG` (Debug),
+- Root: needs CMake 3.16, with `CMP0091` and `CMP0092` set to `OLD` before `project()` so the
+  MSVC flags keep their pre-3.15 form. Defines `-D_CRT_SECURE_NO_WARNINGS`,
+  `-Dinline=__inline` (ucrt C-mode bug) and `-Drestrict=__restrict` (VS2017) — these two for **C
+  only**, via `$<$<COMPILE_LANGUAGE:C>:…>`, which works only while no target holds both `.c` and
+  `.cc` files. Also `__extension__=` (MSVC-only, not clang-cl), `-D_DEBUG` (Debug),
   `/utf-8` (both source **and** execution charset UTF-8 — the execution charset matters so bison's
   UTF-8 glyph literals, e.g. the item dot in `.output`/graphs, stay UTF-8 rather than being
   transcoded to the system codepage), optional `/MD`→`/MT` (`USE_STATIC_RUNTIME`).

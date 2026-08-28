@@ -13,11 +13,15 @@ Last worked 2026-08-27. See [Where we stopped](#where-we-stopped) to resume.
 | 4 — vendored target suppression | **done**, `c3a75a4` |
 | — | *(unplanned)* **done**, `c88acd3` — `flex.skl`/`skel.c` drift repair, see [Findings](#findings-made-during-the-work) |
 | 5 — test target configuration | 3 of 4 items **done**, `41465d6`; `C4005` held — reopened as a product bug (#29) |
-| 1 — scope the C-only defines | **done**; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
-| 2, 3, 6 | not started |
+| 1 — scope the C-only defines | **done**, `a4360ac`; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
+| 2 — port-owned defects | **done**; 5 `const` fixes plus the `lalr.c` format fix |
+| 3, 6 | not started |
 
-Current count: **x64 302 → 63**, Win32 182 → 61, ctest 137/137. All changes so far are build
-configuration; no product behaviour has changed.
+Current count: **x64 302 → 56**, Win32 182 → 56, ctest 137/137. Both architectures are now equal:
+everything left is `C4005` (54, held for #29) and `C4307` (2, Phase 3).
+
+Everything so far was build configuration except Phase 2, which changed six source lines. Only one
+is user-visible, and only in `--trace=automaton` output.
 
 ## Where the numbers come from
 
@@ -181,12 +185,23 @@ fprintf (stderr, "goto_map[%d (%s)] = %ld .. %ld\n",
 ```
 
 `goto_number` is `size_t` (`lalr.h:80`, identical upstream). On LP64 Linux `%ld` and `size_t` are
-both 64-bit, so upstream never noticed; on MSVC x64 `%ld` reads 32 bits of a 64-bit vararg and
-every subsequent conversion in the call is misaligned. Only reachable via
-`--trace=automaton`, so the blast radius is trace output — but it is wrong output.
+both 64-bit, so upstream never noticed; on MSVC x64 `long` is 32-bit, so `%ld` truncates.
 
 Fix: `%zu` for both. Two characters, in vendored code, so it is a Tier-3 change: record it in the
 port-change catalog and send it upstream — bison would want this fix on any LLP64 target.
+
+**Correction, measured while doing the work.** An earlier draft of this section said the following
+arguments in the call end up misaligned. They do not. The MSVC x64 varargs slot is 8 bytes and
+`%ld` consumes the whole slot, so only the value itself is truncated:
+
+```
+old %ld: goto_map[1 (expr)] = 5 .. -1                    <- positions fine
+new %zu: goto_map[1 (expr)] = 5 .. 18446744073709551615
+old %ld big: 7  |  new %zu big: 4294967303               <- the actual bug
+```
+
+So it needs a value above 2^32 (over 4 billion gotos) to show. Real, but not reachable in
+practice. See catalog 6e for the `-1` → `SIZE_MAX` display change this brings with it.
 
 ## Phase 3 — Use upstream's own suppression hook (C4307 ×2, C4308 ×2, some C4018)
 
@@ -326,7 +341,7 @@ carrying 9 × `C4005` + 2 × `D9025`:
 | 5a — test config (`C4065`, `C4311`, deprecations) ✅ | 31 | 17 |
 | 5b — the `C4005` product fix (#29) | 54 | 54 |
 | 1 — scope the C-only defines ✅ | 18 | 18 |
-| 2 — port-owned defects | 7 | 5 |
+| 2 — port-owned defects ✅ | 7 | 5 |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm | 2 | 2 |
 | **Total** | **302 → 0** | **182 → 0** |
 
@@ -481,7 +496,7 @@ worth only the 2 `C4307` warnings. `/wd4307` would get the same log for no upstr
 No changelog entry. Phase 4 got one because `WFB_VENDOR_WARNINGS` is an option users can set;
 none of this is visible to users.
 
-**Phase 1 done** (x64 81 → 63, Win32 79 → 61, ctest 137/137), not committed yet:
+**Phase 1 done** (x64 81 → 63, Win32 79 → 61, ctest 137/137), `a4360ac`:
 
 - `D9025` ×18 — the two defines are now C-only via `$<$<COMPILE_LANGUAGE:C>:…>`, and all four
   `/Uinline /Urestrict` workarounds are gone (`/we4244` kept on `flextest_cxx_batch`).
@@ -489,25 +504,37 @@ none of this is visible to users.
   `CMP0092` set to `OLD` before `project()`. See the two findings above.
 - Changelog entry added, because the new CMake minimum does affect users.
 
+**Phase 2 done** (x64 63 → 56, Win32 61 → 56, ctest 137/137), not committed yet:
+
+- `C4090` ×5 — five locals made `const`, and the two `main_m4` calls now cast their `argv`. All
+  five lines were added by this port, so they are fixed, not hidden.
+- `C4477` ×2 — `lalr.c:152` `%ld` → `%zu`. Vendored code, so it is written up in port-change
+  catalog 6e and should go upstream.
+- Changelog entry for the trace fix only; the `const` changes are not visible to users.
+
 **Loose ends:**
 
 - The Phase 4 changelog entry went in with `c88acd3`, not with Phase 4 itself.
 - VS2019 was never configured locally (not installed). CI is the only check for those four cells.
 - `USE_STATIC_RUNTIME` ignores `MinSizeRel`/`RelWithDebInfo`. We do not ship them.
+- `lalr.c` trace output now shows `SIZE_MAX` where upstream shows `-1`. See catalog 6e.
+- Nothing in the test suite reads `--trace=automaton` output, so the `lalr.c` fix is uncovered.
 
-**Remaining 63 on x64 / 61 on Win32**, and which phase owns each:
+**Remaining 56 on x64 and 56 on Win32:**
 
 | Code | x64 | Win32 | Owner |
 |---|---:|---:|---|
 | `C4005` | 54 | 54 | Phase 5 — the #29 product fix, deliberately held |
-| `C4090` | 5 | 5 | Phase 2 — port-owned `const` defects |
-| `C4477` | 2 | 0 | Phase 2 — the real `lalr.c:152` format bug |
 | `C4307` | 2 | 2 | Phase 3 |
 
-**Next step:** Phase 2 (`C4090` ×5, `C4477` ×2). All seven lines were added by this port, so fix
-them instead of hiding them. `lalr.c:152` uses `%ld` for a `size_t`, which is a real x64 bug and
-worth sending upstream. After that only Phase 3 (2 warnings, optional) and the #29 fix (54) are
-left, and #29 needs the release decision in [Open decisions](#open-decisions) first.
+**Next step:** two things are left, and they are very different in size.
+
+- **Phase 3** — 2 warnings, optional. Open decision 1 still stands: add the MSVC arm to
+  `IGNORE_TYPE_LIMITS` (correct, but edits vendored code), or just use `/wd4307` on `win_bison`
+  for the same result and no upstream diff.
+- **#29 / `C4005`** — the other 54, and the only real work left. It is a product fix with its own
+  test and changelog entry, not a warnings cleanup. It needs open decisions 3 and 4 answered
+  first: does it land on its own branch, and does it go into 2.5.26 or after?
 
 ### Measurement loop
 
