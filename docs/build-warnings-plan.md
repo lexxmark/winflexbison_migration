@@ -6,12 +6,17 @@ Get the MSVC build to zero warnings without turning the vendored flex/bison/m4/g
 into a merge-conflict field at the next upstream upgrade.
 
 Status of this document: **in progress**, config-first order (4 → 5 → 1 → 2 → 3 → 6).
+Last worked 2026-08-27. See [Where we stopped](#where-we-stopped) to resume.
 
 | Phase | State |
 |---|---|
-| 4 — vendored target suppression | **done**, `c3a75a4`. x64 302 → 112, Win32 → 96, ctest 137/137 |
-| 5 — test target configuration | in progress; `C4005` reopened as a product bug, see below |
+| 4 — vendored target suppression | **done**, `c3a75a4` |
+| — | *(unplanned)* **done**, `c88acd3` — `flex.skl`/`skel.c` drift repair, see [Findings](#findings-made-during-the-work) |
+| 5 — test target configuration | 3 of 4 items **done**; `C4005` held — reopened as a product bug (#29) |
 | 1, 2, 3, 6 | not started |
+
+Current count: **x64 302 → 81**, Win32 182 → 79, ctest 137/137. All changes so far are build
+configuration; no product behaviour has changed.
 
 ## Where the numbers come from
 
@@ -290,7 +295,8 @@ carrying 9 × `C4005` + 2 × `D9025`:
 | Phase | x64 removed | Win32 removed |
 |---|---:|---:|
 | 4 — vendored target suppression ✅ | 190 | 86 |
-| 5 — test config + the `C4005` product fix | 85 | 71 |
+| 5a — test config (`C4065`, `C4311`, deprecations) ✅ | 31 | 17 |
+| 5b — the `C4005` product fix (#29) | 54 | 54 |
 | 1 — scope the C-only defines | 18 | 18 |
 | 2 — port-owned defects | 7 | 5 |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm | 2 | 2 |
@@ -328,3 +334,131 @@ else is CMake or port-owned code.
 4. **Release gating.** Does this go into 2.5.26, or after it? Phase 4 changes no shipped behavior,
    but the #29 fix changes what every generated scanner contains — that is a release-note item,
    and it argues for 2.5.26 rather than after.
+
+---
+
+## Findings made during the work
+
+Things discovered while implementing that were not in the original plan. Recorded here so they
+are not re-derived.
+
+### `flex.skl` and `skel.c` had drifted — `--wincompat` lived only in the generated file
+
+Found while verifying the skeleton regeneration pipeline before using it. Regenerating `skel.c`
+from `flex.skl` with upstream's own `mkskel.sh` produced a file **9 lines short**: the
+`M4_YY_WIN_COMPAT` block (`<io.h>`, `_isatty`, `_fileno`) appeared once in `skel.c` and zero times
+in `flex.skl`. The option is wired up in `main.c:1288`, `options.c:202`, `options.h:129`, but the
+skeleton half of the feature was only ever added to the generated file.
+
+So regenerating the skeleton the upstream way **silently deleted `--wincompat`** — the port's
+headline flex feature and the flag the whole flex test suite generates with. Nothing caught it,
+because `flex/CMakeLists.txt` only compiles `skel.c`; no build step regenerates it.
+
+Repaired in `c88acd3`: the block was ported into `flex.skl`, and the repair is proved by
+`skel.c` being **unchanged** — the repaired source now reproduces the committed file byte for byte.
+
+**Regeneration recipe** (needs MSYS2 for `m4` and `sh`; `mkskel.sh` is not vendored, it comes from
+the baseline mirror):
+
+```
+C:\msys64\usr\bin\bash.exe -lc \
+  "cd <repo>/winflexbison/flex/src && \
+   sh <repo>/upstream/flex/src/mkskel.sh . m4 2.6.4 > /tmp/skel_regen.c"
+cmp /tmp/skel_regen.c winflexbison/flex/src/skel.c   # must be identical before any change
+```
+
+Always run that `cmp` **before** editing the skeleton, and again after, so the only delta is the
+intended one. `flex.skl` is otherwise byte-identical to upstream 2.6.4 except the one
+`(int)yyin.gcount()` line from #73.
+
+### `C4005` is issue #29 — closed, but never actually fixed
+
+See Phase 5. Short version: every downstream user compiling a flex C++ scanner with MSVC gets 9
+macro-redefinition warnings, because MSVC never defines `__STDC_VERSION__` in C++ mode. The
+existing `flex.flexint_h_stdint` regression test pins `/we4005` but only on a **C** scanner, where
+no `<stdint.h>` ever follows — so it passes trivially and never covered the C++ path. Upstream
+fixed it after 2.6.4 by moving the typedefs into `src/flexint_shared.h` (with an `_MSC_VER >= 1600`
+arm) and keeping the limit macros out of the skeleton.
+
+Groundwork already done, so it does not need redoing:
+
+- the skeleton body never references `INT8_MIN` & co., so dropping them from generated scanners is
+  safe (`grep` of `flex.skl` for the limit macros: no hits);
+- `westes/flex` PR #309 is **closed, not merged** — the change landed separately; read
+  `src/flexint_shared.h` and `src/Makefile.am` on master, not the PR;
+- upstream master has since restructured the skeleton heavily (`cpp-flex.skl`, `c99-flex.skl`,
+  `go-flex.skl`, `skeletons.c`), so this is a targeted backport of the idea, not a file copy.
+
+### Every new C++ test target costs 11 warnings
+
+The local baseline (302) is 11 higher than CI's 291 purely because commit `77978ed` added the
+`flextest_cxx_batch` target, which arrives carrying 9 × `C4005` + 2 × `D9025`. That is the
+argument that Phase 1 and the #29 fix are structural rather than cosmetic.
+
+### Phase 3 shrank
+
+Phase 4's `/wd4308` on `win_bison` already covers the two `strversion.c` sites, so Phase 3 is now
+worth only the 2 `C4307` warnings. `/wd4307` would get the same log for no upstream diff.
+
+## Where we stopped
+
+**Landed** (branch `dev`):
+
+| Commit | Repo | What |
+|---|---|---|
+| `c3a75a4` | `winflexbison` | Phase 4 — per-target `/wd` list + `WFB_VENDOR_WARNINGS` switch |
+| `c88acd3` | `winflexbison` | `flex.skl` drift repair + 2 changelog entries |
+| `08178e8` | parent | this document + submodule bump (points at `c3a75a4`) |
+| *(uncommitted)* | `winflexbison` | Phase 5, the three config items — see below |
+
+**Phase 5, three of four items done** (x64 112 → 81, Win32 96 → 79, ctest 137/137):
+
+- `C4065` ×13 — `/wd4065` on `bisontest_many_tokens` in `tests/bison/CMakeLists.txt`.
+- `C4311` ×14 — `/wd4311` on `flextest_mem_nr`/`flextest_mem_r`, sources untouched as decided.
+- bison deprecations ×4 — `add_flex_bison_test` gained a `BISON_OPTIONS` parameter, and the three
+  grammars vendored verbatim from `upstream/flex/tests/` are generated with
+  `-Wno-deprecated -Wno-other`. Our own `core_yylex_wrapper_parser.y` was instead updated
+  `%pure-parser` → `%define api.pure`; verified that win_bison's output is **byte-identical**
+  either way, so the issue #8 test still exercises what it did.
+
+No changelog entry: unlike Phase 4's `WFB_VENDOR_WARNINGS` option, none of this is user-visible.
+
+**Uncommitted / loose ends:**
+
+- The parent repo's submodule pointer is **stale** — it points at `c3a75a4`. Needs a bump once the
+  Phase 5 work is committed.
+- The Phase 4 changelog entry went in with `c88acd3` rather than with Phase 4 itself.
+
+**Remaining 81 on x64 / 79 on Win32**, and which phase owns each:
+
+| Code | x64 | Win32 | Owner |
+|---|---:|---:|---|
+| `C4005` | 54 | 54 | Phase 5 — the #29 product fix, deliberately held |
+| `D9025` | 18 | 18 | Phase 1 |
+| `C4090` | 5 | 5 | Phase 2 — port-owned `const` defects |
+| `C4477` | 2 | 0 | Phase 2 — the real `lalr.c:152` format bug |
+| `C4307` | 2 | 2 | Phase 3 |
+
+**Suggested next step:** Phase 1 (`D9025` ×18, scope the `inline`/`restrict` defines to C) — the
+last purely-config item, and the one whose caveat needs proving on a real VS2022 *and* VS2019
+configure. That leaves only the #29 product fix and Phases 2/3.
+
+### Measurement loop
+
+Warnings are only re-emitted for translation units that actually recompile, so **every
+measurement needs a fresh build tree** — an incremental build silently under-reports.
+
+```
+rm -rf CMakeBuildWarn_x64
+cmake -B CMakeBuildWarn_x64 -S . -G "Visual Studio 17 2022" -A x64
+cmake --build CMakeBuildWarn_x64 --config Release   > build.log 2>&1
+grep -c " warning " build.log
+ctest --test-dir CMakeBuildWarn_x64 -C Release
+```
+
+Then the same with `-A Win32`. Both architectures must be checked: `C4267`, `C4311` and `C4477`
+fire only on x64, while `C4018` fires ~3× more on Win32.
+
+`CMakeBuild*/` is gitignored. Note that **the runtime output directory is hardcoded** to
+`bin/Release` by a plain `set()` in the root `CMakeLists.txt`, so `-D` cannot redirect it and a
+Win32 build leaves 32-bit binaries there — run Win32 first and x64 last so the tree is left 64-bit.
