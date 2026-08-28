@@ -14,14 +14,17 @@ Last worked 2026-08-27. See [Where we stopped](#where-we-stopped) to resume.
 | — | *(unplanned)* **done**, `c88acd3` — `flex.skl`/`skel.c` drift repair, see [Findings](#findings-made-during-the-work) |
 | 5 — test target configuration | 3 of 4 items **done**, `41465d6`; `C4005` held — reopened as a product bug (#29) |
 | 1 — scope the C-only defines | **done**, `a4360ac`; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
-| 2 — port-owned defects | **done**; 5 `const` fixes plus the `lalr.c` format fix |
-| 3, 6 | not started |
+| 2 — port-owned defects | **done**, `2e873b8`; 5 `const` fixes plus the `lalr.c` format fix |
+| 3 — `IGNORE_TYPE_LIMITS` MSVC arm | **done**; open decision 1 settled — take the arm |
+| 6 — keep the signal | audit switch shipped in Phase 4; `/WX` part not started |
 
-Current count: **x64 302 → 56**, Win32 182 → 56, ctest 137/137. Both architectures are now equal:
-everything left is `C4005` (54, held for #29) and `C4307` (2, Phase 3).
+Current count: **x64 302 → 54**, Win32 182 → 54, ctest 137/137. **Everything left is the same one
+thing:** `C4005` ×54, which is issue #29. Every other warning code is at zero on both
+architectures.
 
-Everything so far was build configuration except Phase 2, which changed six source lines. Only one
-is user-visible, and only in `--trace=automaton` output.
+Almost all of this was build configuration. Only Phase 2 (six source lines) and Phase 3 (one
+`#elif` block) touched code, and only one of those lines is visible to users, in
+`--trace=automaton` output.
 
 ## Where the numbers come from
 
@@ -229,6 +232,17 @@ Remaining `C4308`/`C4146` sites (`common/m4/freeze.c:312`, `eval.c:726,812`, `bu
 `m4/lib/malloc/dynarray_resize.c:45`, `misc/reallocarray.c:31`) sit outside any marked region and
 fall to Phase 4.
 
+**Outcome.** Done. Open decision 1 was settled in favour of the arm. x64 56 → 54, Win32 56 → 54,
+ctest 137/137. Written up as port-change catalog **6f**.
+
+Shipped with `disable : 4307 4308`, not just 4307. Three files use the markers —
+`InadequacyList.c:37`, `strversion.c:31`, `symtab.c:1082` — and between them they produce C4307 ×2
+and C4308 ×4. Phase 4's target-wide `/wd4308` already hid the C4308 in a normal build, but not in
+an audit build, and those four are exactly as intentional as the two C4307. Covering both keeps
+`-DWFB_VENDOR_WARNINGS=ON` free of things upstream has already declared deliberate.
+
+Checked in an audit build: no C4307 or C4308 from any of the three files.
+
 ## Phase 4 — Suppress the vendored mass at target level (C4267, C4244, C4018, C4146, C4308, C4116)
 
 Add to the root `CMakeLists.txt`, applied to the three vendored targets only:
@@ -342,7 +356,7 @@ carrying 9 × `C4005` + 2 × `D9025`:
 | 5b — the `C4005` product fix (#29) | 54 | 54 |
 | 1 — scope the C-only defines ✅ | 18 | 18 |
 | 2 — port-owned defects ✅ | 7 | 5 |
-| 3 — `IGNORE_TYPE_LIMITS` MSVC arm | 2 | 2 |
+| 3 — `IGNORE_TYPE_LIMITS` MSVC arm ✅ | 2 | 2 |
 | **Total** | **302 → 0** | **182 → 0** |
 
 Phase 3 dropped from 4 to 2 because Phase 4's `/wd4308` already covers the two `strversion.c`
@@ -366,10 +380,9 @@ else is CMake or port-owned code.
 
 ## Open decisions
 
-1. **Phase 3 scope.** Now worth only 2 warnings (`C4307`), since Phase 4's `/wd4308` already covers
-   the rest. It is proposed because it is *correct* — it marks intent where upstream marks intent —
-   not because it is necessary. Drop it if the preference is zero discretionary upstream edits;
-   `/wd4307` on `win_bison` gets the same log for no upstream diff.
+1. ~~**Phase 3 scope.**~~ Decided: take the MSVC arm, not `/wd4307`. It covers only the regions
+   upstream already marked, so a new signed-overflow constant elsewhere in bison still gets
+   reported, and the audit build stays free of warnings upstream calls intentional.
 2. ~~**`C4311` in the flex mem tests.**~~ Decided: suppress, sources untouched.
 3. **Does the #29 fix belong in this work or its own?** It is now the largest item in Phase 5 and
    it is a product change with its own test and changelog entry, not a warnings cleanup. Landing it
@@ -471,6 +484,9 @@ ignore `USE_STATIC_RUNTIME`. We do not ship them, so nothing is broken today.
 Phase 4's `/wd4308` on `win_bison` already covers the two `strversion.c` sites, so Phase 3 is now
 worth only the 2 `C4307` warnings. `/wd4307` would get the same log for no upstream diff.
 
+Still true for the normal build, but it undersold the arm: `/wd4308` only hides those sites while
+the audit switch is off. The arm shipped covering both codes, so the audit build is clean too.
+
 ## Where we stopped
 
 **Landed** (branch `dev`):
@@ -482,7 +498,11 @@ worth only the 2 `C4307` warnings. `/wd4307` would get the same log for no upstr
 | `08178e8` | parent | this document + submodule bump (points at `c3a75a4`) |
 | `41465d6` | `winflexbison` | Phase 5 — the three config items |
 | `f94fd68` | parent | this document + submodule bump (points at `41465d6`) |
-| *(uncommitted)* | `winflexbison` | Phase 1 + the CMake 3.16 bump — see below |
+| `a4360ac` | `winflexbison` | Phase 1 + the CMake 3.16 bump |
+| `a9a7e85` | parent | this document + submodule bump (points at `a4360ac`) |
+| `2e873b8` | `winflexbison` | Phase 2 — 5 `const` fixes + the `lalr.c` format fix |
+| `eff37e6` | parent | this document, catalog 6e + submodule bump (points at `2e873b8`) |
+| *(uncommitted)* | `winflexbison` | Phase 3 — the `IGNORE_TYPE_LIMITS` MSVC arm |
 
 **Phase 5, three of four items done** (x64 112 → 81, Win32 96 → 79, ctest 137/137):
 
@@ -504,13 +524,34 @@ none of this is visible to users.
   `CMP0092` set to `OLD` before `project()`. See the two findings above.
 - Changelog entry added, because the new CMake minimum does affect users.
 
-**Phase 2 done** (x64 63 → 56, Win32 61 → 56, ctest 137/137), not committed yet:
+**Phase 2 done** (x64 63 → 56, Win32 61 → 56, ctest 137/137), `2e873b8`:
 
 - `C4090` ×5 — five locals made `const`, and the two `main_m4` calls now cast their `argv`. All
   five lines were added by this port, so they are fixed, not hidden.
 - `C4477` ×2 — `lalr.c:152` `%ld` → `%zu`. Vendored code, so it is written up in port-change
   catalog 6e and should go upstream.
 - Changelog entry for the trace fix only; the `const` changes are not visible to users.
+
+**Phase 3 done** (x64 56 → 54, Win32 56 → 54, ctest 137/137), not committed yet:
+
+- `C4307` ×2 — the `_MSC_VER` arm for `IGNORE_TYPE_LIMITS` in `bison/src/system.h`, covering
+  `4307 4308`. Catalog 6f; offer it upstream. No changelog entry, nothing user-visible.
+
+**Audit baseline** (`-DWFB_VENDOR_WARNINGS=ON`, x64), which Verification step 4 asks for:
+
+| Code | Count | |
+|---|---:|---|
+| C4267 | 122 | vendored, size_t narrowing |
+| C4005 | 54 | issue #29 |
+| C4244 | 38 | vendored, narrowing |
+| C4018 | 19 | vendored, signed/unsigned |
+| C4146 | 5 | vendored |
+| C4308 | 3 | vendored, outside any marked region |
+| C4116 | 1 | vendored |
+| **total** | **242** | |
+
+No C4307 anywhere, and no C4308 from `InadequacyList.c`, `strversion.c` or `symtab.c` — that is
+the check that the arm works.
 
 **Loose ends:**
 
@@ -520,21 +561,20 @@ none of this is visible to users.
 - `lalr.c` trace output now shows `SIZE_MAX` where upstream shows `-1`. See catalog 6e.
 - Nothing in the test suite reads `--trace=automaton` output, so the `lalr.c` fix is uncovered.
 
-**Remaining 56 on x64 and 56 on Win32:**
+**Remaining: 54 on x64, 54 on Win32, all one code.**
 
 | Code | x64 | Win32 | Owner |
 |---|---:|---:|---|
-| `C4005` | 54 | 54 | Phase 5 — the #29 product fix, deliberately held |
-| `C4307` | 2 | 2 | Phase 3 |
+| `C4005` | 54 | 54 | issue #29, deliberately held |
 
-**Next step:** two things are left, and they are very different in size.
+**Next step: #29, and nothing else.** Every phase in this document is finished except the `C4005`
+product fix and the `/WX` half of Phase 6. #29 is not a warnings cleanup — it changes what every
+generated C++ scanner contains, so it needs its own test and changelog entry, and open decisions 3
+and 4 answered first: own branch or not, and 2.5.26 or after.
 
-- **Phase 3** — 2 warnings, optional. Open decision 1 still stands: add the MSVC arm to
-  `IGNORE_TYPE_LIMITS` (correct, but edits vendored code), or just use `/wd4307` on `win_bison`
-  for the same result and no upstream diff.
-- **#29 / `C4005`** — the other 54, and the only real work left. It is a product fix with its own
-  test and changelog entry, not a warnings cleanup. It needs open decisions 3 and 4 answered
-  first: does it land on its own branch, and does it go into 2.5.26 or after?
+The `/WX` half of Phase 6 (fail the build on warnings in port-owned code) is worth doing **after**
+#29, not before: `tests/winflexbison/` is clean today, but the flex C++ test targets are not, and
+they will not be until #29 lands.
 
 ### Measurement loop
 

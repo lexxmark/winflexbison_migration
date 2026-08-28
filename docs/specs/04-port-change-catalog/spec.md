@@ -245,6 +245,30 @@ compared anywhere.
 **Upstream:** worth reporting; the fix applies to any LLP64 target, not just this port. Mention
 the `-1` → `SIZE_MAX` display change, since upstream may prefer to keep the old display.
 
+### 6f. Bison `IGNORE_TYPE_LIMITS` MSVC arm *(fills a gap upstream left open)*
+
+About six lines, in one file, at the place upstream built for it.
+
+- `bison/src/system.h` — a new `# elif defined _MSC_VER` arm for
+  `IGNORE_TYPE_LIMITS_BEGIN` / `_END`, using `__pragma (warning (push))` /
+  `(disable : 4307 4308)` / `(pop)`.
+
+Upstream wrote this macro pair to say "the code between these markers compares against type limits
+on purpose". It has a GCC arm and an empty `#else`, so on MSVC the markers do nothing and the
+`INT_ADD_WRAPV` / `INT_MULTIPLY_WRAPV` expansions inside them warn. Three files use the markers:
+`InadequacyList.c:37`, `strversion.c:31`, `symtab.c:1082`. They produce C4307 ×2 and C4308 ×4.
+
+Chosen over `/wd4307` on the whole `win_bison` target because it covers only the regions upstream
+already marked. A new signed-overflow constant somewhere else in bison still gets reported. It
+also keeps the `-DWFB_VENDOR_WARNINGS=ON` audit free of warnings upstream has already called
+intentional.
+
+**Replay:** after re-vendoring bison, check whether the `#else` is still empty. If upstream has
+added an MSVC arm, drop this entry.
+
+**Upstream:** worth offering as-is. It fills a branch upstream left open and changes nothing for
+GCC or clang.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
