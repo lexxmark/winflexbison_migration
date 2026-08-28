@@ -12,10 +12,11 @@ Last worked 2026-08-27. See [Where we stopped](#where-we-stopped) to resume.
 |---|---|
 | 4 — vendored target suppression | **done**, `c3a75a4` |
 | — | *(unplanned)* **done**, `c88acd3` — `flex.skl`/`skel.c` drift repair, see [Findings](#findings-made-during-the-work) |
-| 5 — test target configuration | 3 of 4 items **done**; `C4005` held — reopened as a product bug (#29) |
-| 1, 2, 3, 6 | not started |
+| 5 — test target configuration | 3 of 4 items **done**, `41465d6`; `C4005` held — reopened as a product bug (#29) |
+| 1 — scope the C-only defines | **done**; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
+| 2, 3, 6 | not started |
 
-Current count: **x64 302 → 81**, Win32 182 → 79, ctest 137/137. All changes so far are build
+Current count: **x64 302 → 63**, Win32 182 → 61, ctest 137/137. All changes so far are build
 configuration; no product behaviour has changed.
 
 ## Where the numbers come from
@@ -132,6 +133,33 @@ definitions, linked by the product targets and the C test targets. Either way th
 on a real VS2022 *and* VS2019 configure, not reasoned about.
 
 Removes: 16 lines per cell, and one long-standing wart.
+
+**Outcome.** Done. Removed 18 per cell, not 16: the local tree has two more C++ test targets than
+the CI cells the 16 came from. x64 81 → 63, Win32 79 → 61, ctest 137/137.
+
+The caveat was real. Tested with a small throwaway project with three targets:
+
+| Target | Gets the defines? | |
+|---|---|---|
+| C files only | yes | correct |
+| C++ files only | no | correct |
+| both .c and .cc | **no, not even the .c file** | **problem** |
+
+Visual Studio uses one flag set per `.vcxproj`, so in a mixed target `COMPILE_LANGUAGE` is CXX and
+the C files lose the defines. `set(CMAKE_C_FLAGS ...)` was tried too and fails the same way, so
+this is a Visual Studio limit, not a wrong choice of command.
+
+So this only works while no target has both `.c` and `.cc` files. Checked every generated
+`.vcxproj`: none does. Keep it that way — a future mixed target would lose `inline`/`restrict` on
+its C files with no error.
+
+`add_compile_definitions` needs CMake 3.12, so the floor went 3.10 → **3.16** in all four
+`CMakeLists.txt`. The 3.10 was already wrong: line 58 has used `add_compile_definitions` for a
+while. The bump has a cost, see the policy finding below.
+
+**VS2019 was not tested locally.** Only VS2022 is installed here; `cmake -G "Visual Studio 16
+2019"` says "could not find any instance of Visual Studio". AppVeyor builds four VS2019 cells, so
+CI covers it, but this is the one part proven by CI only.
 
 ## Phase 2 — Fix the port-owned defects (C4090 ×5, C4477 ×2)
 
@@ -297,7 +325,7 @@ carrying 9 × `C4005` + 2 × `D9025`:
 | 4 — vendored target suppression ✅ | 190 | 86 |
 | 5a — test config (`C4065`, `C4311`, deprecations) ✅ | 31 | 17 |
 | 5b — the `C4005` product fix (#29) | 54 | 54 |
-| 1 — scope the C-only defines | 18 | 18 |
+| 1 — scope the C-only defines ✅ | 18 | 18 |
 | 2 — port-owned defects | 7 | 5 |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm | 2 | 2 |
 | **Total** | **302 → 0** | **182 → 0** |
@@ -395,6 +423,34 @@ The local baseline (302) is 11 higher than CI's 291 purely because commit `77978
 `flextest_cxx_batch` target, which arrives carrying 9 × `C4005` + 2 × `D9025`. That is the
 argument that Phase 1 and the #29 fix are structural rather than cosmetic.
 
+### Raising the CMake minimum silently adopts two MSVC policies
+
+Found while doing Phase 1. `cmake_minimum_required` does more than allow newer commands: it also
+turns on every policy up to that version. Going 3.10 → 3.16 turns on **CMP0091** and **CMP0092**,
+both added in 3.15. Both change MSVC flags:
+
+| Policy | What NEW does | What that would break here |
+|---|---|---|
+| `CMP0091` | removes `/MD` from `CMAKE_<LANG>_FLAGS_<CONFIG>` | `USE_STATIC_RUNTIME` works by replacing `/MD` with `/MT` in those flags. With no `/MD` there, it does nothing. CI builds with `USE_STATIC_RUNTIME=ON`, so releases would link the dynamic CRT |
+| `CMP0092` | removes `/W3` from `CMAKE_<LANG>_FLAGS` | C++ sets its own `/W3`, but C would drop to `/W1`. Most warnings this document tracks would disappear, and the phase would look better than it was |
+
+Neither one fails the build. Measured by configuring the same tiny project at both floors:
+
+```
+FLOOR=3.10   C_FLAGS=[/DWIN32 /D_WINDOWS /W3]   C_FLAGS_RELEASE=[/MD /O2 /Ob2 /DNDEBUG]
+FLOOR=3.16   C_FLAGS=[/DWIN32 /D_WINDOWS]       C_FLAGS_RELEASE=[/O2 /Ob2 /DNDEBUG]
+```
+
+Both are set to `OLD` before `project()`. That order matters: `project()` is where CMake fills in
+these flags, so setting the policies after it does nothing. Checked after the change: `/W3` is
+back in `CMAKE_C_FLAGS`, the C targets' `.vcxproj` say `<WarningLevel>Level3</WarningLevel>`, and
+`-DUSE_STATIC_RUNTIME=ON` still gives `<RuntimeLibrary>MultiThreaded</RuntimeLibrary>`.
+
+**Separate task, not this one:** move to the NEW behaviour properly — use
+`CMAKE_MSVC_RUNTIME_LIBRARY` instead of replacing text, and set `/W3` directly. Also note the
+replace loop never listed `CMAKE_C_FLAGS_MINSIZEREL` and `_RELWITHDEBINFO`, so those two configs
+ignore `USE_STATIC_RUNTIME`. We do not ship them, so nothing is broken today.
+
 ### Phase 3 shrank
 
 Phase 4's `/wd4308` on `win_bison` already covers the two `strversion.c` sites, so Phase 3 is now
@@ -409,39 +465,49 @@ worth only the 2 `C4307` warnings. `/wd4307` would get the same log for no upstr
 | `c3a75a4` | `winflexbison` | Phase 4 — per-target `/wd` list + `WFB_VENDOR_WARNINGS` switch |
 | `c88acd3` | `winflexbison` | `flex.skl` drift repair + 2 changelog entries |
 | `08178e8` | parent | this document + submodule bump (points at `c3a75a4`) |
-| *(uncommitted)* | `winflexbison` | Phase 5, the three config items — see below |
+| `41465d6` | `winflexbison` | Phase 5 — the three config items |
+| `f94fd68` | parent | this document + submodule bump (points at `41465d6`) |
+| *(uncommitted)* | `winflexbison` | Phase 1 + the CMake 3.16 bump — see below |
 
 **Phase 5, three of four items done** (x64 112 → 81, Win32 96 → 79, ctest 137/137):
 
 - `C4065` ×13 — `/wd4065` on `bisontest_many_tokens` in `tests/bison/CMakeLists.txt`.
 - `C4311` ×14 — `/wd4311` on `flextest_mem_nr`/`flextest_mem_r`, sources untouched as decided.
-- bison deprecations ×4 — `add_flex_bison_test` gained a `BISON_OPTIONS` parameter, and the three
-  grammars vendored verbatim from `upstream/flex/tests/` are generated with
-  `-Wno-deprecated -Wno-other`. Our own `core_yylex_wrapper_parser.y` was instead updated
-  `%pure-parser` → `%define api.pure`; verified that win_bison's output is **byte-identical**
-  either way, so the issue #8 test still exercises what it did.
+- bison deprecations ×4 — `add_flex_bison_test` got a new `BISON_OPTIONS` parameter. The three
+  grammars copied from `upstream/flex/tests/` are now generated with `-Wno-deprecated -Wno-other`.
+  Our own `core_yylex_wrapper_parser.y` was changed to `%define api.pure` instead. Checked that
+  win_bison writes the same bytes either way, so the issue #8 test still tests the same thing.
 
-No changelog entry: unlike Phase 4's `WFB_VENDOR_WARNINGS` option, none of this is user-visible.
+No changelog entry. Phase 4 got one because `WFB_VENDOR_WARNINGS` is an option users can set;
+none of this is visible to users.
 
-**Uncommitted / loose ends:**
+**Phase 1 done** (x64 81 → 63, Win32 79 → 61, ctest 137/137), not committed yet:
 
-- The parent repo's submodule pointer is **stale** — it points at `c3a75a4`. Needs a bump once the
-  Phase 5 work is committed.
-- The Phase 4 changelog entry went in with `c88acd3` rather than with Phase 4 itself.
+- `D9025` ×18 — the two defines are now C-only via `$<$<COMPILE_LANGUAGE:C>:…>`, and all four
+  `/Uinline /Urestrict` workarounds are gone (`/we4244` kept on `flextest_cxx_batch`).
+- `cmake_minimum_required` 3.10 → **3.16** in all four `CMakeLists.txt`, with `CMP0091` and
+  `CMP0092` set to `OLD` before `project()`. See the two findings above.
+- Changelog entry added, because the new CMake minimum does affect users.
 
-**Remaining 81 on x64 / 79 on Win32**, and which phase owns each:
+**Loose ends:**
+
+- The Phase 4 changelog entry went in with `c88acd3`, not with Phase 4 itself.
+- VS2019 was never configured locally (not installed). CI is the only check for those four cells.
+- `USE_STATIC_RUNTIME` ignores `MinSizeRel`/`RelWithDebInfo`. We do not ship them.
+
+**Remaining 63 on x64 / 61 on Win32**, and which phase owns each:
 
 | Code | x64 | Win32 | Owner |
 |---|---:|---:|---|
 | `C4005` | 54 | 54 | Phase 5 — the #29 product fix, deliberately held |
-| `D9025` | 18 | 18 | Phase 1 |
 | `C4090` | 5 | 5 | Phase 2 — port-owned `const` defects |
 | `C4477` | 2 | 0 | Phase 2 — the real `lalr.c:152` format bug |
 | `C4307` | 2 | 2 | Phase 3 |
 
-**Suggested next step:** Phase 1 (`D9025` ×18, scope the `inline`/`restrict` defines to C) — the
-last purely-config item, and the one whose caveat needs proving on a real VS2022 *and* VS2019
-configure. That leaves only the #29 product fix and Phases 2/3.
+**Next step:** Phase 2 (`C4090` ×5, `C4477` ×2). All seven lines were added by this port, so fix
+them instead of hiding them. `lalr.c:152` uses `%ld` for a `size_t`, which is a real x64 bug and
+worth sending upstream. After that only Phase 3 (2 warnings, optional) and the #29 fix (54) are
+left, and #29 needs the release decision in [Open decisions](#open-decisions) first.
 
 ### Measurement loop
 
