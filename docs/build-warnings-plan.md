@@ -6,25 +6,24 @@ Get the MSVC build to zero warnings without turning the vendored flex/bison/m4/g
 into a merge-conflict field at the next upstream upgrade.
 
 Status of this document: **in progress**, config-first order (4 → 5 → 1 → 2 → 3 → 6).
-Last worked 2026-08-27. See [Where we stopped](#where-we-stopped) to resume.
+Last worked 2026-09-06. See [Where we stopped](#where-we-stopped) to resume.
 
 | Phase | State |
 |---|---|
 | 4 — vendored target suppression | **done**, `c3a75a4` |
 | — | *(unplanned)* **done**, `c88acd3` — `flex.skl`/`skel.c` drift repair, see [Findings](#findings-made-during-the-work) |
-| 5 — test target configuration | 3 of 4 items **done**, `41465d6`; `C4005` held — reopened as a product bug (#29) |
+| 5 — test target configuration | **done**; three config items in `41465d6`, the fourth (`C4005`) turned out to be product bug #29 and is fixed separately |
 | 1 — scope the C-only defines | **done**, `a4360ac`; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
 | 2 — port-owned defects | **done**, `2e873b8`; 5 `const` fixes plus the `lalr.c` format fix |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm | **done**; open decision 1 settled — take the arm |
 | 6 — keep the signal | audit switch shipped in Phase 4; `/WX` part not started |
 
-Current count: **x64 302 → 54**, Win32 182 → 54, ctest 137/137. **Everything left is the same one
-thing:** `C4005` ×54, which is issue #29. Every other warning code is at zero on both
-architectures.
+Current count: **x64 302 → 0**, Win32 182 → 0, ctest 138/138. Every warning code is at zero on
+both architectures. Only the `/WX` half of Phase 6 is left.
 
-Almost all of this was build configuration. Only Phase 2 (six source lines) and Phase 3 (one
-`#elif` block) touched code, and only one of those lines is visible to users, in
-`--trace=automaton` output.
+Almost all of this was build configuration. Only Phase 2 (six source lines), Phase 3 (one `#elif`
+block) and the #29 fix (a new header plus two edits) touched code. Two of those are visible to
+users: the `--trace=automaton` format, and what every generated C++ scanner contains.
 
 ## Where the numbers come from
 
@@ -302,7 +301,8 @@ in `flexint.h`, which the skeleton no longer includes — `src/Makefile.am` conf
 depends on `flexint_shared.h`. Generated scanners stop defining the macros at all. Note PR #309 is
 *closed, not merged*; the change landed separately.
 
-**Decision: backport that structure.** New `flex/src/flexint_shared.h`, `flexint.h` reduced to
+**Decision: backport that structure.** Done — see [Where we stopped](#where-we-stopped) and
+catalog 6g. New `flex/src/flexint_shared.h`, `flexint.h` reduced to
 limit macros plus an include of it, `flex.skl` including the shared header, `skel.c` regenerated,
 plus a C++ regression test that pins `/we4005` the way the C one does, and a changelog entry.
 This is a product fix, not a warnings cleanup — it closes #29 and matches what 2.6.5 will ship, so
@@ -353,7 +353,7 @@ carrying 9 × `C4005` + 2 × `D9025`:
 |---|---:|---:|
 | 4 — vendored target suppression ✅ | 190 | 86 |
 | 5a — test config (`C4065`, `C4311`, deprecations) ✅ | 31 | 17 |
-| 5b — the `C4005` product fix (#29) | 54 | 54 |
+| 5b — the `C4005` product fix (#29) ✅ | 54 | 54 |
 | 1 — scope the C-only defines ✅ | 18 | 18 |
 | 2 — port-owned defects ✅ | 7 | 5 |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm ✅ | 2 | 2 |
@@ -384,12 +384,11 @@ else is CMake or port-owned code.
    upstream already marked, so a new signed-overflow constant elsewhere in bison still gets
    reported, and the audit build stays free of warnings upstream calls intentional.
 2. ~~**`C4311` in the flex mem tests.**~~ Decided: suppress, sources untouched.
-3. **Does the #29 fix belong in this work or its own?** It is now the largest item in Phase 5 and
-   it is a product change with its own test and changelog entry, not a warnings cleanup. Landing it
-   as a separate commit (or separate branch) keeps the warnings work reviewable.
-4. **Release gating.** Does this go into 2.5.26, or after it? Phase 4 changes no shipped behavior,
-   but the #29 fix changes what every generated scanner contains — that is a release-note item,
-   and it argues for 2.5.26 rather than after.
+3. ~~**Does the #29 fix belong in this work or its own?**~~ Decided: its own commit on `dev`, on
+   top of the warnings work. It is a product change with its own test and changelog entry, so
+   keeping it separate leaves the warnings commits reviewable on their own.
+4. ~~**Release gating.**~~ Decided: 2.5.26. Everything else already sits under `### unreleased`,
+   and a change to what every generated scanner contains is a release-note item.
 
 ---
 
@@ -440,8 +439,8 @@ Groundwork already done, so it does not need redoing:
 
 - the skeleton body never references `INT8_MIN` & co., so dropping them from generated scanners is
   safe (`grep` of `flex.skl` for the limit macros: no hits);
-- `westes/flex` PR #309 is **closed, not merged** — the change landed separately; read
-  `src/flexint_shared.h` and `src/Makefile.am` on master, not the PR;
+- `westes/flex` PR #309 is **closed, not merged** — the change landed separately, as commit
+  `5574881` (2018-03-08) plus three later refinements. All four are listed in catalog 6g;
 - upstream master has since restructured the skeleton heavily (`cpp-flex.skl`, `c99-flex.skl`,
   `go-flex.skl`, `skeletons.c`), so this is a targeted backport of the idea, not a file copy.
 
@@ -502,7 +501,10 @@ the audit switch is off. The arm shipped covering both codes, so the audit build
 | `a9a7e85` | parent | this document + submodule bump (points at `a4360ac`) |
 | `2e873b8` | `winflexbison` | Phase 2 — 5 `const` fixes + the `lalr.c` format fix |
 | `eff37e6` | parent | this document, catalog 6e + submodule bump (points at `2e873b8`) |
-| *(uncommitted)* | `winflexbison` | Phase 3 — the `IGNORE_TYPE_LIMITS` MSVC arm |
+| `5d7ae20` | `winflexbison` | Phase 3 — the `IGNORE_TYPE_LIMITS` MSVC arm |
+| `b5ade6e` | parent | this document, the audit baseline + submodule bump (points at `5d7ae20`) |
+| `1d46677` | `winflexbison` | the #29 fix — `flexint_shared.h` split + C++ regression test |
+| *(this commit)* | parent | this document + catalog 6g + submodule bump (points at `1d46677`) |
 
 **Phase 5, three of four items done** (x64 112 → 81, Win32 96 → 79, ctest 137/137):
 
@@ -532,23 +534,39 @@ none of this is visible to users.
   catalog 6e and should go upstream.
 - Changelog entry for the trace fix only; the `const` changes are not visible to users.
 
-**Phase 3 done** (x64 56 → 54, Win32 56 → 54, ctest 137/137), not committed yet:
+**Phase 3 done** (x64 56 → 54, Win32 56 → 54, ctest 137/137), `5d7ae20`:
 
 - `C4307` ×2 — the `_MSC_VER` arm for `IGNORE_TYPE_LIMITS` in `bison/src/system.h`, covering
   `4307 4308`. Catalog 6f; offer it upstream. No changelog entry, nothing user-visible.
 
-**Audit baseline** (`-DWFB_VENDOR_WARNINGS=ON`, x64), which Verification step 4 asks for:
+**#29 done** (x64 54 → 0, Win32 54 → 0, ctest 138/138), `1d46677`:
+
+- New `flex/src/flexint_shared.h` (typedefs only, with the `_MSC_VER >= 1600` arm),
+  `flex/src/flexint.h` reduced to limit macros plus an include of it, and `flex.skl` including the
+  shared header instead. Both headers are upstream master's files verbatim. `skel.c` regenerated;
+  its diff is confined to that one block. Catalogued as 6g.
+- New test `flex.flexint_h_stdint_cxx` — compiles the already-generated `cxx_basic.cc` a second
+  time with `/we4005`. Checked both directions: with the pre-fix `win_flex` the same compile fails
+  with 9 × C4005, with the new one it passes.
+- Changelog entry, since this changes what every generated C++ scanner contains.
+- `flex/src/skel.c` cannot be regenerated with upstream's `mkskel.sh` on this machine — MSYS2's
+  sed 4.9 eats a backslash in its escaping pass and corrupts every `\"` in the string table. Write
+  the escaping step outside sed, feed m4 LF copies of the included headers, and prove the
+  generator by reproducing the committed `skel.c` byte for byte before using it. Written up in
+  catalog 6g.
+
+**Audit baseline** (`-DWFB_VENDOR_WARNINGS=ON`, x64), which Verification step 4 asks for. Measured
+again after the #29 fix; only the `C4005` row changed:
 
 | Code | Count | |
 |---|---:|---|
 | C4267 | 122 | vendored, size_t narrowing |
-| C4005 | 54 | issue #29 |
 | C4244 | 38 | vendored, narrowing |
 | C4018 | 19 | vendored, signed/unsigned |
 | C4146 | 5 | vendored |
 | C4308 | 3 | vendored, outside any marked region |
 | C4116 | 1 | vendored |
-| **total** | **242** | |
+| **total** | **188** | was 242; `C4005` ×54 is gone |
 
 No C4307 anywhere, and no C4308 from `InadequacyList.c`, `strversion.c` or `symtab.c` — that is
 the check that the arm works.
@@ -561,20 +579,13 @@ the check that the arm works.
 - `lalr.c` trace output now shows `SIZE_MAX` where upstream shows `-1`. See catalog 6e.
 - Nothing in the test suite reads `--trace=automaton` output, so the `lalr.c` fix is uncovered.
 
-**Remaining: 54 on x64, 54 on Win32, all one code.**
+**Remaining: 0 on x64, 0 on Win32.** Fresh VS2022 trees, Release, both architectures, ctest
+138/138 in each.
 
-| Code | x64 | Win32 | Owner |
-|---|---:|---:|---|
-| `C4005` | 54 | 54 | issue #29, deliberately held |
-
-**Next step: #29, and nothing else.** Every phase in this document is finished except the `C4005`
-product fix and the `/WX` half of Phase 6. #29 is not a warnings cleanup — it changes what every
-generated C++ scanner contains, so it needs its own test and changelog entry, and open decisions 3
-and 4 answered first: own branch or not, and 2.5.26 or after.
-
-The `/WX` half of Phase 6 (fail the build on warnings in port-owned code) is worth doing **after**
-#29, not before: `tests/winflexbison/` is clean today, but the flex C++ test targets are not, and
-they will not be until #29 lands.
+**Next step: the `/WX` half of Phase 6** — fail the build on warnings in port-owned code. That was
+blocked on #29 (the flex C++ test targets were not clean), and no longer is. VS2019 and the Debug
+cells are still only checked by CI, so `/WX` should go in expecting CI to find cells this machine
+cannot build.
 
 ### Measurement loop
 

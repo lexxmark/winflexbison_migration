@@ -82,7 +82,7 @@ top-level builds) plus an opt-in MSYS2-driven bison autotest. See
 `docs/specs/03-test-adoption/spec.md` for the full design.
 
 - **Windows CTest gate — `runtests.bat`** (configure + build Release + `ctest`), no MSYS2 needed:
-  - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (116 exit-code/comparison tests;
+  - `tests/flex/` — the flex v2.6.4 suite adapted to CTest (118 exit-code/comparison tests;
     scanners generated with `win_flex --wincompat`, compiled with MSVC, run).
   - `tests/bison/` — a self-contained compile-run parser plus golden-diff diagnostics (win_bison vs
     golden captured from the reference bison; regenerate with `tests/bison/generate.sh` under MSYS2,

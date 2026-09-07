@@ -269,6 +269,65 @@ added an MSVC arm, drop this entry.
 **Upstream:** worth offering as-is. It fills a branch upstream left open and changes nothing for
 GCC or clang.
 
+### 6g. Flex `flexint_shared.h` split *(backport — retires on the next flex upgrade)*
+
+A new header plus two small edits. Like 6d this is a **backport of an upstream fix that postdates
+2.6.4**, not a Windows-only patch.
+
+- new `flex/src/flexint_shared.h` — the `flex_int8_t` … `flex_uint32_t` typedefs, taken from
+  upstream master verbatim. It picks `<cstdint>` for C++11, `<inttypes.h>` for C99, and
+  `<stdint.h>` for `_MSC_VER >= 1600`; only if none of those apply does it fall back to
+  hand-rolled typedefs.
+- `flex/src/flexint.h` — keeps the `FLEXINT_H` guard and the limit macros (`INT8_MIN` …
+  `SIZE_MAX`), but now gets its typedefs from `#include "flexint_shared.h"`. Also matches upstream
+  master. Only `flexdef.h` includes it, so this is flex's own build and nothing else.
+- `flex/src/flex.skl:234` — the `m4preproc_include` there now names `flexint_shared.h` instead of
+  `flexint.h`.
+
+That last line is the actual fix for #29. Before it, every generated scanner carried the whole of
+`flexint.h`, limit macros included. MSVC never defines `__STDC_VERSION__` in C++ mode, so the
+non-C99 branch always ran, and `<iostream>` a few lines later pulled in the SDK's `<stdint.h>`,
+which defines the same nine macros — C4005 ×9 in every C++ scanner MSVC compiles. Generated
+scanners never referenced the limit macros, so dropping them costs nothing.
+
+**Pairing:** same trap as 6d — the skeleton win_flex actually reads is the copy compiled into
+`flex/src/skel.c`, so `flex.skl` and `skel.c` must move together.
+
+**Regenerating `skel.c`:** upstream's `src/mkskel.sh` does not work as-is on this machine. MSYS2's
+sed 4.9 reads its escaping pass `s/[\\"]/\\&/g` as `s/[\\"]/\&/g`, so every `\"` in the generated
+string table comes out as a bare `&` — a silently corrupt `skel.c`. Do the escaping outside sed
+(a short Python port of the script works). Two further points, both learned the hard way:
+
+- feed m4 **LF** copies of `flex.skl`, `flexint.h`, `flexint_shared.h`, `tables_shared.h` and
+  `tables_shared.c`. Several of those are CRLF in a normal Windows checkout, and the `\r` ends up
+  inside the `skel.c` string literals.
+- check the result by first regenerating from the *unmodified* sources: it must reproduce the
+  committed `skel.c` byte for byte before you trust it with a change.
+
+**Upstream commits.** The change landed in four steps, all in `westes/flex`:
+
+| Commit | Date | What |
+|---|---|---|
+| [`5574881`](https://github.com/westes/flex/commit/5574881ff4c9b08c73b6acc0087d6046c2b48de5) | 2018-03-08 | the fix — adds `src/flexint_shared.h` and edits `flex.skl`, `flexint.h`, `Makefile.am`. The same three edits this entry makes |
+| [`e1f6b4a`](https://github.com/westes/flex/commit/e1f6b4a26399b0e7849fd646fe5ee690231b32d4) | 2018-03-08 | more compatible typedefs in the shared header |
+| [`98018e3`](https://github.com/westes/flex/commit/98018e3f58d79e082216d406866942841d4bdf8a) | 2018-03-19 | the `YYFLEX_INTTYPES_DEFINED` include guard |
+| [`8ab4ea7`](https://github.com/westes/flex/commit/8ab4ea7364641bf498ea2fc8c1078b9f871ae0ba) | 2022-06-17 | the `__cplusplus >= 201103L` / `<cstdint>` arm |
+
+`5574881` is the one to cite. The other three only refine the shared header, and since we took
+upstream master's current `flexint_shared.h` verbatim, all four are already in.
+
+Nothing needs offering upstream — this is a backport, not a new fix. Note PR #309, which the
+issue #29 thread points at, is **closed, not merged**; read these commits instead.
+
+Why the port never picked it up on its own: flex 2.6.4 was tagged 2017-05-06, the fix is from
+2018-03-08, and there has been no flex release since. Anyone building a C++ scanner with MSVC
+against a released flex still hits this.
+
+**Replay:** after re-vendoring flex, check whether `src/flexint_shared.h` exists upstream and
+whether the skeleton includes it. Any flex newer than 2.6.4 should already have it, and this entry
+can be dropped. `flex.flexint_h_stdint_cxx` in the CTest suite fails if the fix is lost;
+`flex.flexint_h_stdint` (the C scanner) does not — it passes either way.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
