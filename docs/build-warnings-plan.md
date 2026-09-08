@@ -16,10 +16,11 @@ Last worked 2026-09-06. See [Where we stopped](#where-we-stopped) to resume.
 | 1 — scope the C-only defines | **done**, `a4360ac`; carried a CMake minimum bump with it, see [Findings](#findings-made-during-the-work) |
 | 2 — port-owned defects | **done**, `2e873b8`; 5 `const` fixes plus the `lalr.c` format fix |
 | 3 — `IGNORE_TYPE_LIMITS` MSVC arm | **done**; open decision 1 settled — take the arm |
-| 6 — keep the signal | audit switch shipped in Phase 4; `/WX` part not started |
+| 6 — keep the signal | **done**; audit switch shipped in Phase 4, `/WX` on the test targets plus an AppVeyor warning gate |
 
-Current count: **x64 302 → 0**, Win32 182 → 0, ctest 138/138. Every warning code is at zero on
-both architectures. Only the `/WX` half of Phase 6 is left.
+Current count: **x64 302 → 0**, Win32 182 → 0, ctest 138/138 (139 with `USE_STATIC_RUNTIME=ON`).
+Every warning code is at zero on both architectures, and both halves of Phase 6 now hold that
+zero in place. **This plan is finished.**
 
 Almost all of this was build configuration. Only Phase 2 (six source lines), Phase 3 (one `#elif`
 block) and the #29 fix (a new header plus two edits) touched code. Two of those are visible to
@@ -335,6 +336,21 @@ bug. Two cheap counterweights:
   port-owned target can carry `/WX` so port code cannot regress. Do **not** put `/WX` on the
   vendored targets — one new upstream warning would then break the build on upgrade day.
 
+  **Correction, found when implementing.** `tests/winflexbison/` has no compiled targets at all —
+  every test there is a PowerShell or CMake script — so `/WX` there would have been a no-op. There
+  is in fact **no port-owned compiled target** anywhere: the port's own code lives inside vendored
+  files as `#ifdef _MSC_VER` blocks, not in separate targets. What the tree does have is 17 test
+  executables that compile *generated* output, and that is where #73, #95 and #29 all showed up.
+  So `/WX` went there instead, at directory scope in `tests/CMakeLists.txt`, with
+  `WFB_TESTS_WERROR` (default ON) to turn it off on upgrade day. The vendored product targets are
+  covered by the CI gate below rather than by `/WX`.
+
+- **A warning gate in CI.** `/WX` cannot cover `win_flex`, `win_bison`, `winflexbison_common`,
+  `fl` or `y` for the upgrade-day reason above, so AppVeyor captures the build log and fails the
+  cell if it contains any warning line. That holds the zero across *every* target, in all 8 build
+  cells including the VS2019 and Debug ones no local machine here can check, while keeping upgrade
+  day a log to read rather than a compile to fight.
+
 Optional follow-up, not part of this plan: the GitHub Actions clang-cl workflow has been failing at
 *configure* since before this work (`Windows-Clang.cmake:187` under CMake 4.4), so there is no
 clang-cl warning data at all. Every number above is MSVC-only. `/wd` flags are accepted by
@@ -504,7 +520,9 @@ the audit switch is off. The arm shipped covering both codes, so the audit build
 | `5d7ae20` | `winflexbison` | Phase 3 — the `IGNORE_TYPE_LIMITS` MSVC arm |
 | `b5ade6e` | parent | this document, the audit baseline + submodule bump (points at `5d7ae20`) |
 | `1d46677` | `winflexbison` | the #29 fix — `flexint_shared.h` split + C++ regression test |
-| *(this commit)* | parent | this document + catalog 6g + submodule bump (points at `1d46677`) |
+| `9d6d361` | parent | this document + catalog 6g + submodule bump (points at `1d46677`) |
+| `818c001` | `winflexbison` | Phase 6 — `/WX` on the test targets + the AppVeyor warning gate |
+| *(this commit)* | parent | this document + submodule bump (points at `818c001`) |
 
 **Phase 5, three of four items done** (x64 112 → 81, Win32 96 → 79, ctest 137/137):
 
@@ -579,13 +597,34 @@ the check that the arm works.
 - `lalr.c` trace output now shows `SIZE_MAX` where upstream shows `-1`. See catalog 6e.
 - Nothing in the test suite reads `--trace=automaton` output, so the `lalr.c` fix is uncovered.
 
-**Remaining: 0 on x64, 0 on Win32.** Fresh VS2022 trees, Release, both architectures, ctest
-138/138 in each.
+**Phase 6 done** (the `/WX` half; the audit switch shipped back in Phase 4), `818c001`:
 
-**Next step: the `/WX` half of Phase 6** — fail the build on warnings in port-owned code. That was
-blocked on #29 (the flex C++ test targets were not clean), and no longer is. VS2019 and the Debug
-cells are still only checked by CI, so `/WX` should go in expecting CI to find cells this machine
-cannot build.
+- `/WX` at directory scope in `tests/CMakeLists.txt`, behind `WFB_TESTS_WERROR` (default ON). It
+  covers the 17 test executables that compile generated scanners and parsers, and nothing else.
+  The plan's original target, `tests/winflexbison/`, turned out to have no compiled targets —
+  see the correction in Phase 6 above.
+- Checked it actually bites: removing the `/wd4065` from `bisontest_many_tokens` makes the build
+  fail on C4065 rather than warn. Reverted after.
+- Verified `TreatWarningAsError` is set on the test `.vcxproj` files and **absent** from
+  `win_flex.vcxproj`, which is the property that keeps upgrade day survivable.
+- AppVeyor `build_script` now captures the log, echoes it back, and fails the cell if it contains
+  a warning line. The gate logic was tested against three real logs before commit: the clean
+  Release x64 log → pass, the 188-warning audit log → fail, and a log containing only MSBuild's
+  `0 Warning(s)` summary → pass. The build's own failure path was tested too, so a broken build
+  still prints its log instead of dying silently.
+
+**Measured locally, all four VS2022 cells, with `USE_STATIC_RUNTIME=ON` to match CI:**
+
+| Cell | Warnings | ctest |
+|---|---:|---|
+| Release x64 | 0 | 139/139 |
+| Release Win32 | 0 | 139/139 |
+| Debug x64 | 0 | not run |
+| Debug Win32 | 0 | 139/139 |
+
+**Remaining: 0 on x64, 0 on Win32.** The four VS2019 cells are still unverified here — VS2019 is
+not installed on this machine — so the first CI run after this lands is the real test of them. If
+it goes red, that is the gate working, not a regression: read the log and decide.
 
 ### Measurement loop
 

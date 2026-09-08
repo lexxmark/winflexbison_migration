@@ -72,6 +72,15 @@ are built there anyway) and skips it in the autotest job; packaging happens in `
 skipped in the autotest job — so a failing test produces no zip. GitHub Actions only
 configures/builds/packages.
 
+The build is warning-free and two things keep it that way. The test targets compile with `/WX`
+(set at directory scope in `tests/CMakeLists.txt`, behind `WFB_TESTS_WERROR`, default ON), so a
+generated scanner or parser that starts warning fails the build at once — that is the class of
+bug #73, #95 and #29 all were. The vendored targets deliberately do **not** get `/WX`, because a
+newer MSVC or a re-vendor would then break the build on upgrade day; they are covered instead by
+an AppVeyor step that captures the build log and fails the cell if it holds any warning line. To
+land an upgrade before its warnings are dealt with, comment out that `findstr` line and/or
+configure with `-DWFB_TESTS_WERROR=OFF`. See `docs/build-warnings-plan.md`.
+
 VS2026 is not in the matrix: the worker image exists and ships MSBuild 18.7.8, but its CMake
 (4.1.2) has no `Visual Studio 18 2026` generator, so those jobs fail at configure.
 
