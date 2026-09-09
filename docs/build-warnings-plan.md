@@ -5,8 +5,11 @@
 Get the MSVC build to zero warnings without turning the vendored flex/bison/m4/gnulib sources
 into a merge-conflict field at the next upstream upgrade.
 
-Status of this document: **in progress**, config-first order (4 → 5 → 1 → 2 → 3 → 6).
-Last worked 2026-09-06. See [Where we stopped](#where-we-stopped) to resume.
+Status of this document: **complete** — all six phases landed, config-first order
+(4 → 5 → 1 → 2 → 3 → 6). Last worked 2026-09-06; confirmed green end to end by AppVeyor build
+1.0.27 (`bbc84e0`, 2026-09-08), all 9 jobs, with the warning gate live. Kept as the record of what
+was suppressed and why — read it before an upstream upgrade, since the vendored suppressions are
+the part that will need revisiting. [Where we stopped](#where-we-stopped) has the commit list.
 
 | Phase | State |
 |---|---|
