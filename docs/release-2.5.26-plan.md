@@ -103,7 +103,7 @@ Both #97 and #100 are still marked OPEN on GitHub despite having their closing c
 
 ### Recommended in
 
-All four are now done; #70 is the only one left to decide.
+All five are now done; #70 is the only one left to decide.
 
 | Issue | What | Notes |
 |---|---|---|
@@ -111,6 +111,7 @@ All four are now done; #70 is the only one left to decide.
 | #73 | C4244 in `LexerInput` | **DONE (2026-08-24), on `dev` in `77978ed`.** `return (int)yyin.gcount();` — the same one-line cast upstream flex made in `b198864a` (2021-06-22), so a future flex re-vendor keeps it. Lives in the *skeleton*, not `FlexLexer.h`: `flex/src/flex.skl:1533` plus its compiled-in copy `flex/src/skel.c:1974`, which is the one win_flex actually reads. Only the non-interactive branch of `LexerInput` has the line and flex generates interactive scanners by default, so the test `flex.cxx_batch_lexer_input` regenerates `cxx_basic.ll` with `-B` and compiles it with `/we4244`; verified failing pre-fix. Catalogued as 6d. |
 | #29 | 9 × C4005 in every generated C++ scanner | **DONE (2026-09-06), on `dev` in `1d46677`.** Closed upstream in the tracker but never actually fixed here. Backported upstream master's split: new `flex/src/flexint_shared.h` holds the `flex_int*_t` typedefs, `flexint.h` keeps only the limit macros, `flex.skl` includes the shared header, `skel.c` regenerated. Test `flex.flexint_h_stdint_cxx`; catalogued as 6g. The pre-existing `flex.flexint_h_stdint` never covered C++, which is why this survived. |
 | #96 | Typo in repo metadata | **DONE (2026-09-08), fixed and closed on GitHub.** Not a code change. |
+| #89 | D skeletons generate code that does not compile | **DONE (2026-09-11), on `dev`.** Backport of upstream's two post-3.8.2 fixes, eight lines across `bison/data/skeletons/lalr1.d` (`%code lexer` wrote Java's `implements`) and `d.m4` (`SymbolKind.toString` used `std.range` names the output never imports; reached via `%define parse.error detailed`). Verified with LDC both ways: the pre-fix skeletons fail to compile, the fixed ones compile, link and run. Six tests over `tests/bison/cases/d_skeleton.y` — five content checks that need no D compiler, plus a real compile when one is present (AppVeyor installs LDC in the VS2022/x64/Release cell). Catalogued as 6h. Croydon asked to close this as out of scope; taken anyway because it is upstream's own fix, retires itself on the next bison upgrade, and there has been no bison release in five years. |
 
 ### Needs discussion
 

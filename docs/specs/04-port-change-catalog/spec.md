@@ -328,6 +328,48 @@ whether the skeleton includes it. Any flex newer than 2.6.4 should already have 
 can be dropped. `flex.flexint_h_stdint_cxx` in the CTest suite fails if the fix is lost;
 `flex.flexint_h_stdint` (the C scanner) does not — it passes either way.
 
+### 6h. Bison D skeleton fixes (`d.m4`, `lalr1.d`) *(backport — retires on the next bison upgrade)*
+
+Two hunks, eight lines, taken byte for byte from upstream. Like 6d and 6g this is a **backport of
+upstream fixes that postdate the vendored release** (3.8.2), not a Windows patch — the D backend is
+broken the same way on every platform.
+
+- `bison/data/skeletons/lalr1.d` — `%code lexer` wrapped the block in
+  `private class YYLexer implements Lexer {`. `implements` is Java; D inherits with `:`. The class
+  declaration does not parse, so nothing after it compiles either.
+- `bison/data/skeletons/d.m4` — `SymbolKind.toString` took a template sink constrained by
+  `isOutputRange` and wrote through `put()`. Both live in `std.range`, which the generated parser
+  never imports (it imports `std.format` and `std.conv`). The replacement takes a plain
+  `void delegate(const(char)[])` and writes with `formattedWrite`, which the existing imports cover.
+
+The `d.m4` half only bites when something instantiates that template. `%define parse.error detailed`
+does: the generated error builder calls `format()` on a `SymbolKind`.
+
+**Upstream commits**, both in `akimd/bison`, both 2022-09-19:
+
+| Commit | Issue | What |
+|---|---|---|
+| [`be45280`](https://github.com/akimd/bison/commit/be4528096ec05f0d58bd9ff53a293e1ec3193a85) | [#84](https://github.com/akimd/bison/issues/84) | `lalr1.d` interface syntax, plus a `tests/d.at` case |
+| [`0faf371`](https://github.com/akimd/bison/commit/0faf3719926defc459c10b0a8d04d6a29c47a53f) | [#88](https://github.com/akimd/bison/issues/88) | `d.m4` `SymbolKind.toString` |
+
+Checked against savannah (the GitHub mirror stops at 2022-09-20): these two, plus copyright bumps,
+are the **complete** post-3.8.2 history of both files, so with them the D skeletons here match
+current upstream. Nothing to offer upstream.
+
+Why the port never picked it up: bison 3.8.2 was tagged 2021-09-11 and there has been no release
+since, so every released bison still generates D that will not compile.
+
+**Tests.** `tests/bison/cases/d_skeleton.y` carries both triggers (`%code lexer` and
+`%define parse.error detailed`). Five content checks over the generated file run everywhere —
+MSVC cannot compile D — and a sixth test compiles it for real when CMake finds `ldc2`, `ldmd2`,
+`dmd` or `gdc` (AppVeyor installs LDC in one cell; see `.appveyor.yml`). All six fail if either
+hunk is reverted. The vendored autotest copy `tests/bison-autotest/at/d.at` also carries upstream's
+new case, but its D groups skip: `run.sh` sets `BISON_DC_WORKS=false`.
+
+**Replay:** after re-vendoring bison, check whether upstream's `lalr1.d` already says
+`private class YYLexer: Lexer`. Any bison newer than 3.8.2 will, and this entry can be dropped
+whole — the tests stay and keep passing.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):
