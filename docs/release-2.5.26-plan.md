@@ -16,7 +16,7 @@ on `dev`.
 | Branch | `dev`, 69 commits ahead of `master` (local and `origin/dev` both at `bbc84e0`) |
 | Version | root `CMakeLists.txt` still says `2.5.25`; changelog heading still `### unreleased` |
 | Last release | v2.5.25, tagged 2022-01 |
-| Last CI | AppVeyor build 1.0.27 (`bbc84e0`, 2026-09-08) — green on all 9 jobs, 139/139 ctest in the VS2022/x64/Release cell, autotest 715 run / 12 failed, all 12 on the documented xfail list |
+| Last CI | AppVeyor build 1.0.177 (`bbc84e0`, 2026-09-08) — green on all 9 jobs, 139/139 ctest in the VS2022/x64/Release cell, autotest 715 run / 12 failed, all 12 on the documented xfail list |
 | Open on GitHub | 20 issues, 5 pull requests |
 | Generated | 2026-08-18, refreshed 2026-09-08 |
 
@@ -254,7 +254,7 @@ stayed lost for nine releases.
 ## G. License and package contents — review of 2026-09-08
 
 Checked against the real artifact: `win_flex_bison-dev-vs-2022-x64-Release.zip` from AppVeyor build
-1.0.27, not against the install rules alone.
+1.0.177, not against the install rules alone.
 
 ### What actually ships
 

@@ -7,7 +7,7 @@ into a merge-conflict field at the next upstream upgrade.
 
 Status of this document: **complete** — all six phases landed, config-first order
 (4 → 5 → 1 → 2 → 3 → 6). Last worked 2026-09-06; confirmed green end to end by AppVeyor build
-1.0.27 (`bbc84e0`, 2026-09-08), all 9 jobs, with the warning gate live. Kept as the record of what
+1.0.177 (`bbc84e0`, 2026-09-08), all 9 jobs, with the warning gate live. Kept as the record of what
 was suppressed and why — read it before an upstream upgrade, since the vendored suppressions are
 the part that will need revisiting. [Where we stopped](#where-we-stopped) has the commit list.
 
@@ -31,7 +31,7 @@ users: the `--trace=automaton` format, and what every generated C++ scanner cont
 
 ## Where the numbers come from
 
-AppVeyor build 21 (`94ea54db`, "bison: make YYPTRDIFF_T pointer-wide on MSVC (#95)"), all 9 jobs
+AppVeyor build 1.0.171 (`94ea54db`, "bison: make YYPTRDIFF_T pointer-wide on MSVC (#95)"), all 9 jobs
 green. The 8 build cells were downloaded and de-duplicated; no local build was run, so these are
 exactly what CI emits today.
 
