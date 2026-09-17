@@ -370,6 +370,45 @@ new case, but its D groups skip: `run.sh` sets `BISON_DC_WORKS=false`.
 `private class YYLexer: Lexer`. Any bison newer than 3.8.2 will, and this entry can be dropped
 whole — the tests stay and keep passing.
 
+### 6i. Flex `inline` on the generated `yywrap` *(bug fix — send upstream)*
+
+One word, in one string literal, in one file.
+
+- `flex/src/main.c` (~line 1769) — the `!do_yywrap` arm of the `C_plus_plus` block emits
+  `"\ninline int yyFlexLexer::yywrap() { return 1; }"`. Upstream emits the same line without
+  `inline`.
+
+Flex writes its prolog once per **output stream**. With `%option c++ noyywrap` *and* a generated
+header, that definition therefore lands in both the `.cc` and the header, and any program that
+includes the header and links the scanner has the symbol twice:
+
+```
+ScannerX.obj : error LNK2005: "public: virtual int __cdecl yyFlexLexer::yywrap(void)"
+               already defined in main.obj
+```
+
+`inline` makes the duplicate legal — the two definitions are byte-identical, so the linker folds
+them. It needs all three options at once; drop any one and nothing goes wrong, which is why it
+went unreported for so long and why no upstream test covers it.
+
+Landed as `b2d5968` (2021-01-07) for issue #70 and shipped in v2.5.25, but it was catalogued only
+in 2026 — it sat as an uncovered one-word divergence for five years. `tests/flex/` now carries
+`flex.cxx_noyywrap_header`, which links a generated scanner against a second translation unit that
+includes the generated header; the assertion is the link step itself, so a regression fails the
+build rather than a test.
+
+**Replay:** after re-vendoring flex, re-apply the `inline`. This is the single most re-vendorable
+change in the catalog — one word inside a quoted string, invisible to any diff that skims for
+structure. `flex.cxx_noyywrap_header` is the safety net: if the word goes missing the test target
+will not link.
+
+**Upstream:** not yet sent. Upstream tracker is
+[westes/flex#472](https://github.com/westes/flex/issues/472). Note that `inline` is the minimal
+fix, not the clean one — the clean fix is to stop emitting a *definition* into the header at all,
+since `yywrap` is already declared `virtual` in `FlexLexer.h` and the header needs nothing. That is
+a change to how flex splits header from implementation, which is why this port carries the one-word
+version instead.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):

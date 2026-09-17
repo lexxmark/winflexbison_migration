@@ -103,7 +103,8 @@ Both #97 and #100 are still marked OPEN on GitHub despite having their closing c
 
 ### Recommended in
 
-All five are now done; #70 is the only one left to decide.
+All five are now done, and #70 turned out to need no fix at all — it shipped in v2.5.25 and only
+lacked a regression test, which it now has. Nothing in this section is still open.
 
 | Issue | What | Notes |
 |---|---|---|
@@ -117,7 +118,7 @@ All five are now done; #70 is the only one left to decide.
 
 | Issue | What | Notes |
 |---|---|---|
-| #70 | `%option c++` + `%option noyywrap` linker error (multiple definition) | Real flex-side bug, self-contained, but touches the same `fl` library split that #6 would be closed on. Effort unknown until reproduced — suggest timeboxing a repro before committing it to this release. |
+| #70 | `%option c++` + `%option noyywrap` linker error (multiple definition) | **NOT A 2.5.26 CANDIDATE — already fixed and shipped.** `b2d5968` (2021-01-07) made `flex/src/main.c` emit `inline int yyFlexLexer::yywrap()`; it is in `master` and in the **v2.5.25** tag. The earlier triage here was wrong on two counts: it never checked whether the fix had landed, and it guessed at the `fl` library split, which is not involved — the bug is that flex writes its prolog once per output stream, so `header=` gets a second copy of the definition. Reproduced both directions on 2026-09-16 with the reporter's own test case (MSVC 2022): links clean as shipped, `LNK2005` with the `inline` removed. What was actually missing was a **test** — one word in a string literal, unprotected for five years. Now covered by `flex.cxx_noyywrap_header` (links a generated scanner against a second TU that includes the generated header; the assertion is the link step) and catalogued as 6i. Remaining work is bookkeeping: comment and close the issue, and decide whether to offer it to [westes/flex#472](https://github.com/westes/flex/issues/472). |
 | #43 / #93 | Packaging: `find_package(FLEX)` cannot locate `FlexLexer.h` because the Chocolatey shim puts the exe elsewhere | A packaging fix, and a release is the natural moment for it. #93 (Chocolatey still on 2.5.25) is release mechanics regardless — see E.7. |
 
 ### Recommended out — post-release or upstream
@@ -327,9 +328,9 @@ Items 1 to 4 are done and on `dev`. 5 to 7 are judgement calls that can wait.
 
 ## The three decisions that gate everything else
 
-1. **How much of section C goes in?** #95, #73 and #29 are on `dev`; #96 is fixed and closed.
-   What is left of this decision: #70 (timebox a repro before it is promised) and #43 (recommend
-   folding into the packaging step).
+1. **How much of section C goes in?** #95, #73, #29 and #89 are on `dev`; #96 is fixed and closed;
+   #70 needed no fix (shipped in v2.5.25, now has the regression test it was missing). What is
+   left of this decision: only #43 (recommend folding into the packaging step).
 2. **Are the section D pull requests resolved before or after the tag?** Recommendation: before.
 3. **Does `--update` keep the user's CRLF?** (Section F.2.) This one is a release blocker in the
    sense that it changes what a shipped feature does to a file the user owns, and it is much
