@@ -63,10 +63,12 @@ Test executables are therefore redirected to `<build tree>/tests/bin/` by `tests
 any new target that isn't part of the product needs the same treatment.
 
 CI mirrors these paths: AppVeyor (`.appveyor.yml`) builds VS2022 and VS2019, each
-Release+Debug × x64+Win32 (8 build jobs), plus a 9th `WFB_JOB=autotest` job that runs the bison
-GNU Autotest instead of building the matrix cell — `matrix.exclude` keeps it to VS2022/x64/Release,
-and `matrix.allow_failures` makes it non-gating, so it goes red against a green build rather than
-hiding its exit code. GitHub Actions (`.github/workflows/os_windows.yaml`) builds with `clang-cl`
+Release+Debug × x64+Win32 (8 build jobs), plus two `WFB_JOB=autotest` jobs that run the bison
+GNU Autotest instead of building the matrix cell (10 jobs total) — `matrix.exclude` keeps them to
+VS2022/x64/Release, and `matrix.allow_failures` makes them non-gating, so they go red against a
+green build rather than hiding the exit code. The suite is split across those two jobs by group
+range (`WFB_AT_RANGE`, `-490` and `491-`) because all 776 groups in one job hit AppVeyor's
+60-minute per-job wall; each half runs ~35 min including setup. GitHub Actions (`.github/workflows/os_windows.yaml`) builds with `clang-cl`
 via Ninja. AppVeyor runs the CTest gate in **every build cell** (~19s each; the test executables
 are built there anyway) and skips it in the autotest job; packaging happens in `after_test` — also
 skipped in the autotest job — so a failing test produces no zip. GitHub Actions only
