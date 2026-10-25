@@ -415,6 +415,36 @@ since `yywrap` is already declared `virtual` in `FlexLexer.h` and the header nee
 a change to how flex splits header from implementation, which is why this port carries the one-word
 version instead.
 
+### 6j. Bison grammar-as-untrusted-input hardening *(backport — retires on the next bison upgrade)*
+
+A grammar file is attacker-controllable input (CI that runs bison over a downloaded or
+pull-requested `.y`, a service that compiles user grammars). Two 3.8.2 CVEs let a grammar reach
+outside the build; both are fixed by backporting upstream's own post-3.8.2 commits.
+
+- **CVE-2026-56390** — `%output`/`%header` name an output path, so a grammar could write a file
+  anywhere (`%header "../x.h"`). Backport of upstream `8d101c19`: a new `valid_output_file_name`
+  rejects any name with a path separator, and the `%output` action and `handle_header` complain and
+  ignore an invalid name. Lives in **`bison/src/parse-gram.y`** *and* its committed generated copy
+  **`bison/src/parse-gram.c`** (the build does not run bison on itself, so both are hand-edited in
+  lockstep — the `handle_header` prototype gained a `location const *`, and the `.c` passes
+  `&(yylsp[0])`). **Port divergence from upstream:** upstream checks only `strchr(file, '/')`;
+  this port rejects `/`, `\` and `:` (`strpbrk(file, "/\\:")`), because on Windows a backslash is
+  also a separator and `C:` is drive-relative. In practice `/` is the only vector reachable through
+  a bison grammar string anyway — a literal `\` is an escape introducer in those strings and is
+  eaten before it reaches the name — but the extra two cost nothing and document intent.
+- **CVE-2026-56389** — `%define tool.xsltproc` chose the program `--html` runs through `execvp`, so
+  a grammar could run anything. Backport of upstream `3169c1e7`: **`bison/src/print-xml.c`**
+  `print_html` hardcodes `"xsltproc"` (found on `PATH`) instead of reading the muscle, and
+  **`bison/src/reader.c`** drops the `tool.xsltproc` default. The define is now inert.
+
+**Replay:** after re-vendoring bison, grep the new tree for `valid_output_file_name` and
+`tool.xsltproc`. If upstream has merged both (3.8.2 predates them), the vendored code already
+carries the fix and the only port-specific part to re-apply is the `\`/`:` widening in
+`valid_output_file_name`. `winflexbison.grammar_security` in the CTest suite exercises all three:
+the traversal must be refused and write nothing, the `--html` tool must ignore the grammar's
+sentinel, and a legitimate grammar must still build. It failed in both CVE directions before the
+fix.
+
 ## 7. Build-system flags *(mechanical)*
 
 In the CMake tree (see [../../../winflexbison/CMakeLists.txt](../../../winflexbison/CMakeLists.txt)):

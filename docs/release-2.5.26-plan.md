@@ -53,6 +53,24 @@ These three are the ones a downstream user sees in their own build, not ours:
 - `yyFlexLexer::LexerInput` returned `gcount()` (a `std::streamsize`) as `int`, warning C4244 on
   every x64 build of a non-interactive scanner (#73)
 
+### Security fixes — belong in the release notes with their CVE numbers
+
+Two bison CVEs against 3.8.2, both fixed by backporting upstream's own post-3.8.2 commits
+(2026-10-25, on `dev`). A grammar file is untrusted input in CI and in any service that compiles
+user grammars, so these matter to downstream consumers, not just us.
+
+- **CVE-2026-56390** (path traversal): `%output`/`%header` could name any path, so a grammar could
+  write a file outside the output directory. Now rejected. Upstream `8d101c19`, widened for Windows
+  separators.
+- **CVE-2026-56389** (program execution via `--html`): `%define tool.xsltproc` chose the program
+  bison runs for the XML→HTML step. Removed; `xsltproc` is always taken from `PATH`. Upstream
+  `3169c1e7`.
+
+Catalogued as 6j. Covered by `winflexbison.grammar_security`, which failed in both directions
+before the fix. Not fixed: flex's `outfile=`/`header-file=` can likewise point outside the dir, but
+that mirrors flex's own `-o` and upstream flex has no such restriction — left as a documented
+residual, not a divergence.
+
 ### Behavior change — needs its own callout in the release notes
 
 - **win_bison now writes LF, not CRLF**, in generated parsers, headers, `.output` reports and
