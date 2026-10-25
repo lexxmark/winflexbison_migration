@@ -13,12 +13,12 @@ on `dev`.
 
 | | |
 |---|---|
-| Branch | `dev`, 69 commits ahead of `master` (local and `origin/dev` both at `bbc84e0`) |
+| Branch | `dev`, 80 commits ahead of `master` (local and `origin/dev` both at `670b41d`) |
 | Version | root `CMakeLists.txt` still says `2.5.25`; changelog heading still `### unreleased` |
 | Last release | v2.5.25, tagged 2022-01 |
-| Last CI | AppVeyor build 1.0.177 (`bbc84e0`, 2026-09-08) — green on all 9 jobs, 139/139 ctest in the VS2022/x64/Release cell, autotest 715 run / 12 failed, all 12 on the documented xfail list |
-| Open on GitHub | 20 issues, 5 pull requests |
-| Generated | 2026-08-18, refreshed 2026-09-08 |
+| Last CI | AppVeyor build 1.0.187 (`670b41d`, 2026-09-17) — green on all 10 jobs, including both autotest halves; GitHub Actions (clang-cl) green |
+| Open on GitHub | 18 issues, 5 pull requests |
+| Generated | 2026-08-18, refreshed 2026-10-25 |
 
 ---
 
@@ -211,10 +211,17 @@ stayed lost for nine releases.
 
 ### Follow-ups this review turned up
 
-1. **Reword the changelog entry and release note.** "now writes LF instead of CRLF" reads as a new
+1. **~~Reword the changelog entry and release note.~~ DONE in the changelog (2026-10-25)** — it now
+   leads the list and says this repairs what 2.5.17 lost, and that `--xml` and win_flex output do
+   not change. The release note still needs the same wording at tag time.
+   Original note: "now writes LF instead of CRLF" reads as a new
    policy. It is a repair of a regression that has been shipping since 2.5.17. Say so — and say
    that `--xml` output is unchanged, since it was already LF.
-2. **Decide what `--update` / `--fixit` should do to the user's own grammar.** `fixits.c` reads the
+2. **~~Decide what `--update` / `--fixit` should do to the user's own grammar.~~ DONE (2026-10-25):
+   it keeps the file's line endings.** `fixits_run()` checks the first line of the backup; a CRLF
+   grammar is written with `"wt"` (text mode), which `xfopen()` now leaves alone, and an LF grammar
+   stays LF. Test `winflexbison.update_keeps_line_endings` covers both; it failed before the fix
+   (8 LF, 0 CRLF) and passes after. Catalogued under 6a. Original note: `fixits.c` reads the
    backup in text mode and writes through `xfopen(input, "w")`, which is now forced binary. Verified:
    a CRLF `.y` comes back **entirely LF**, not just on the lines that changed; the `.y~` backup keeps
    CRLF. This is the user's source file, not generated output, so the argument for forcing LF is much
@@ -332,7 +339,7 @@ Items 1 to 4 are done and on `dev`. 5 to 7 are judgement calls that can wait.
    #70 needed no fix (shipped in v2.5.25, now has the regression test it was missing). What is
    left of this decision: only #43 (recommend folding into the packaging step).
 2. **Are the section D pull requests resolved before or after the tag?** Recommendation: before.
-3. **Does `--update` keep the user's CRLF?** (Section F.2.) This one is a release blocker in the
+3. **~~Does `--update` keep the user's CRLF?~~ DONE (2026-10-25): yes, see F.2.** This one is a release blocker in the
    sense that it changes what a shipped feature does to a file the user owns, and it is much
    cheaper to settle now than to change again in 2.5.27. Recommendation: exempt the fixits output
    from the binary forcing, and add F.3's gating EOL test in the same change.

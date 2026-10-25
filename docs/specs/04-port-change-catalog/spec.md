@@ -121,6 +121,12 @@ easily lost when bison is re-vendored. Keep these on every upgrade:
   "r"`). Centralized here (not per-call-site) *specifically* because the original per-file `"wb"`
   patches (`a32e862`, in `scan-skel.c`/`print.c`/`print-graph.c`) were **silently lost** in the
   3.8.2 re-vendor — a central chokepoint survives future re-vendors. On POSIX `text == binary`.
+  A mode with `t` (MSVC's explicit text mode) is left alone, for the one caller below.
+- `bison/src/fixits.c` `fixits_run` — `--update`/`--fixit` rewrites the **user's own grammar**,
+  not generated output, so it keeps that file's line endings: `uses_crlf()` looks at the first
+  line of the backup, and a CRLF grammar is written with `"wt"` (text mode, so each `\n` becomes
+  CRLF again); an LF grammar still goes through the forced binary. Without this, the `xfopen`
+  forcing above turned a CRLF grammar entirely LF. Test: `winflexbison.update_keeps_line_endings`.
 - `bison/src/location.c` `caret_set_file` — open the quoted source file **binary** (`"rb"`), not
   text: the caret code smashes `\r\n` itself and relies on true `ftell`/`fseek` byte offsets; text
   mode desyncs them, producing garbled/empty caret source-line echoes.
@@ -135,7 +141,7 @@ easily lost when bison is re-vendored. Keep these on every upgrade:
   same file already performed the substitution for `--output`, so this was a gap, not a decision.
 
 **Replay:** after re-vendoring bison, grep the new tree for `xfopen`, `_setmode`,
-`caret_set_file`/`fopen (caret`, `cat <<`, and `/dev/null`, and re-apply. The `tests/bison-autotest`
+`caret_set_file`/`fopen (caret`, `cat <<`, `/dev/null`, and `uses_crlf`, and re-apply. The `tests/bison-autotest`
 suite catches regressions of all of these (diagnostic caret tests, `%define`/skeleton error tests,
 and any test comparing a generated file).
 
